@@ -1,34 +1,10 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.20)
+project(TakEngine LANGUAGES CXX)
 
-set(PROJECT_NAME TakEngine)
-set(CMAKE_CXX_STANDARD 17)
+# Build third‑party libraries as static by default.
+option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
-set(WINDOW_NAME "TakEngine")
-set(WINDOW_WIDTH 800)
-set(WINDOW_HEIGHT 600)
+include(FetchContent)
 
-project(${PROJECT_NAME})
-add_executable(${PROJECT_NAME}
-        ./main.cpp
-     )
-include(Dependency.cmake)
-
-target_include_directories(${PROJECT_NAME} PUBLIC ${DEP_INCLUDE_DIR})
-target_link_directories(${PROJECT_NAME} PUBLIC ${DEP_LIB_DIR})
-target_link_libraries(${PROJECT_NAME} PUBLIC ${DEP_LIBS})
-
-#vulkan
-find_package(Vulkan REQUIRED)
-target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::Vulkan)
-
-target_compile_definitions(${PROJECT_NAME} PUBLIC
-WINDOW_NAME="${WINDOW_NAME}"
-WINDOW_WIDTH=${WINDOW_WIDTH}
-WINDOW_HEIGHT=${WINDOW_HEIGHT}
-)
-
-# add_dependencies(${PROJECT_NAME} ${DEP_LIST})
-
-if (MSVC)
-    target_compile_options(${PROJECT_NAME} PUBLIC /wd4819)
-endif()
+add_subdirectory(engine)
+add_subdirectory(testbed)
