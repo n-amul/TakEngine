@@ -1,5 +1,5 @@
-#include "clock.h"
 #include <windows.h>
+#include "clock.hpp"
 
 static f64 get_current_time_seconds() {
     LARGE_INTEGER frequency;

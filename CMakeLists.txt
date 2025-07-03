@@ -4,7 +4,9 @@ project(TakEngine LANGUAGES CXX)
 # Build third‑party libraries as static by default.
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
-include(FetchContent)
+if(MSVC)
+    add_compile_options(/wd4996)
+endif()
 
 add_subdirectory(engine)
 add_subdirectory(testbed)

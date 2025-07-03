@@ -15,7 +15,10 @@ target_include_directories(engine
         $<INSTALL_INTERFACE:include>
 )
 
-target_compile_definitions(engine PRIVATE ENGINE_BUILD_DLL)
+# target_compile_definitions(engine PRIVATE TEXPORT)
+if(MSVC)
+    target_compile_options(engine PRIVATE /wd4996)  
+endif()
 
 # ------------------------------------------------------------
 #   Third‑party dependencies
@@ -25,7 +28,7 @@ find_package(Vulkan REQUIRED)      # system Vulkan SDK
 
 include(FetchContent)
 
-# ---- GLM (header‑only, always static) ----
+# ---- GLM ----
 FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
@@ -33,15 +36,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glm)
 
-# ---- GLFW (force static build so no glfw3.dll is produced) ----
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)       # static only while fetching glfw
+# ---- GLFW (static) ----
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
 )
 FetchContent_MakeAvailable(glfw)
-set(BUILD_SHARED_LIBS OFF)                           # leave default OFF for later libs too
+
+# ---- spdlog (header-only by default) ----
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.12.0
+)
+FetchContent_MakeAvailable(spdlog)
 
 # ---- Link everything into engine.dll ----
 target_link_libraries(engine
@@ -49,6 +59,7 @@ target_link_libraries(engine
         Vulkan::Vulkan   # include & link flags
         glm::glm         # header‑only
         glfw             # static .lib
+        spdlog::spdlog   # header‑only
 )
 
 # Export every symbol on Windows (avoids __declspec(dllexport) everywhere)

@@ -17,7 +17,7 @@ int main()
 
     if (!glfwVulkanSupported())
     {
-        std::cerr << "Vulkan loader (vulkan‑1.dll) not found – install the SDK or runtime.\n";
+        std::cerr << "Vulkan loader (vulkan-1.dll) not found - install the SDK or runtime.\n";
         glfwTerminate();
         return EXIT_FAILURE;
     }
@@ -31,7 +31,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    std::cout << "Window created – entering loop\n";
+    std::cout << "Window created - entering loop\n";
 
     while (!glfwWindowShouldClose(win))
     {
