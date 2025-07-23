@@ -1,45 +1,26 @@
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-#include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 
-static void errorCallback(int code, const char* msg)
-{
-    std::cerr << "[GLFW error " << code << "] " << msg << '\n';
-}
+#include <GLFW/glfw3.h>   // Be sure your include path matches
+#include "renderer/VulkanBase.hpp"
 
-int main()
-{
-    glfwSetErrorCallback(errorCallback);
+int main() {
+  if (!glfwInit()) {
+    std::cerr << "Failed to initialize GLFW\n";
+    return EXIT_FAILURE;
+  }
 
-    if (!glfwInit())
-        return EXIT_FAILURE;
-
-    if (!glfwVulkanSupported())
-    {
-        std::cerr << "Vulkan loader (vulkan-1.dll) not found - install the SDK or runtime.\n";
-        glfwTerminate();
-        return EXIT_FAILURE;
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);   // “Vulkan window”
-    GLFWwindow* win = glfwCreateWindow(800, 600, "TakEngine", nullptr, nullptr);
-    if (!win)
-    {
-        std::cerr << "glfwCreateWindow failed.\n";
-        glfwTerminate();
-        return EXIT_FAILURE;
-    }
-
-    std::cout << "Window created - entering loop\n";
-
-    while (!glfwWindowShouldClose(win))
-    {
-        glfwPollEvents();
-        // render();  // nothing yet
-    }
-
-    glfwDestroyWindow(win);
+  try {
+    // 2. Create and test the VulkanBase instance
+    VulkanBase app;
+    app.test();            // Calls InitVulkan() → prints "test passed"
+  } catch (const std::exception& e) {
+    std::cerr << "Exception: " << e.what() << '\n';
     glfwTerminate();
-    return EXIT_SUCCESS;
+    return EXIT_FAILURE;
+  }
+
+  // 3. Clean up GLFW and exit
+  glfwTerminate();
+  return EXIT_SUCCESS;
 }

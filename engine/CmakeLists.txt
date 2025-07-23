@@ -2,7 +2,6 @@
 #   TakEngine ‑ Engine library
 # ------------------------------------------------------------
 
-# All engine source (.cpp) files; headers are included implicitly.
 file(GLOB_RECURSE ENGINE_SRC CONFIGURE_DEPENDS src/*.cpp)
 
 add_library(engine SHARED ${ENGINE_SRC})
@@ -15,7 +14,7 @@ target_include_directories(engine
         $<INSTALL_INTERFACE:include>
 )
 
-# target_compile_definitions(engine PRIVATE TEXPORT)
+target_compile_definitions(engine PRIVATE TEXPORT)
 if(MSVC)
     target_compile_options(engine PRIVATE /wd4996)  
 endif()
@@ -62,5 +61,3 @@ target_link_libraries(engine
         spdlog::spdlog   # header‑only
 )
 
-# Export every symbol on Windows (avoids __declspec(dllexport) everywhere)
-set_target_properties(engine PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)

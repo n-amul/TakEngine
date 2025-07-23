@@ -2,7 +2,7 @@
 
 #include "defines.hpp"
 
-class clock{
+class TAK_API clock{
 public:
     clock(){}
     ~clock(){}

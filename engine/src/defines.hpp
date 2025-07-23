@@ -26,25 +26,27 @@ typedef bool b8;
   #if !defined(_WIN64)
     #error "64-bit build required on Windows"
   #endif
-
 #elif defined(__linux__)
   #define PLATFORM_LINUX 1
-  #if defined(__ANDROID__)
-    #define PLATFORM_ANDROID 1
-  #endif
-
-#elif defined(__APPLE__) && defined(__MACH__)
-  #define PLATFORM_MACOS 1
-
 #else
   #error "Unsupported OS"
 #endif
 
 // Export/import for DLLs
-#ifdef TEXPORT
-  #define TAK_API __declspec(dllexport)
-#else
-  #define TAK_API __declspec(dllimport)
+#ifdef PLATFORM_WINDOWS //windows
+  #ifdef TEXPORT
+    #define TAK_API __declspec(dllexport)
+  #else
+    #define TAK_API __declspec(dllimport)
+  #endif
+#elif defined(__GNUC__) && __GNUC__ >= 4   // Linux w/ GCC or Clang
+    #ifdef TEXPORT
+        #define TAK_API __attribute__((visibility("default")))
+    #else
+        #define TAK_API
+    #endif
+#else // On non window/linux platforms, leave it empty for now
+    #define TAK_API  
 #endif
 
 

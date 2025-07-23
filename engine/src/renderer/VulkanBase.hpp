@@ -1,16 +1,29 @@
 #pragma once
 
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-#include <vulkan/vulkan.h>
-
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
-
 #include "defines.hpp"
 
-class VulkanBase {
+#include <vulkan/vulkan.h>
+#include <cstdint>
+#include <string>
+#include <vector>
+// -----------------------------------------------------------------------------
+// VulkanBase
+// -----------------------------------------------------------------------------
 
+class GLFWwindow;
+
+class TAK_API VulkanBase{
+public:
+  void run();
+  void test();
+private:
+  void InitVulkan();
+  void mainLoop();
+  void cleanup();
+
+  GLFWwindow* window = nullptr;
+  u32 window_width = 0;
+  u32 window_height = 0;
+  std::string title = "Vulkan Base";
+  std::string name = "vulkanBase";
 };

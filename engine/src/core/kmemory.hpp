@@ -23,10 +23,10 @@ typedef enum memory_tag {
     MEMORY_TAG_MAX_TAGS
 } memory_tag;
 
-void memory_init(void);
-void memory_shutdown(void);   // leak check + summary
-void* memory_alloc (u32 size, memory_tag tag);
-void  memory_free  (void* block, u32 size, memory_tag tag);
-u32 memory_bytes(memory_tag tag);   
-u32 memory_allocs(memory_tag tag); 
-void memory_log(void);
+TAK_API void memory_init(void);
+TAK_API void memory_shutdown(void);   // leak check + summary
+TAK_API void* memory_alloc (u32 size, memory_tag tag);
+TAK_API void  memory_free  (void* block, u32 size, memory_tag tag);
+TAK_API u32 memory_bytes(memory_tag tag);   
+TAK_API u32 memory_allocs(memory_tag tag); 
+TAK_API void memory_log(void);
