@@ -1,26 +1,17 @@
-#include <iostream>
-#include <stdexcept>
+#include <spdlog/spdlog.h>
 
-#include <GLFW/glfw3.h>   // Be sure your include path matches
+#include <cstdlib>  // For EXIT_SUCCESS / EXIT_FAILURE
+#include <exception>
+
 #include "renderer/VulkanBase.hpp"
 
 int main() {
-  if (!glfwInit()) {
-    std::cerr << "Failed to initialize GLFW\n";
-    return EXIT_FAILURE;
-  }
-
   try {
-    // 2. Create and test the VulkanBase instance
     VulkanBase app;
-    app.test();            // Calls InitVulkan() → prints "test passed"
+    app.run();
   } catch (const std::exception& e) {
-    std::cerr << "Exception: " << e.what() << '\n';
-    glfwTerminate();
+    SPDLOG_ERROR("Unhandled exception: {}", e.what());
     return EXIT_FAILURE;
   }
-
-  // 3. Clean up GLFW and exit
-  glfwTerminate();
   return EXIT_SUCCESS;
 }
