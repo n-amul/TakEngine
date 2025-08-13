@@ -66,7 +66,7 @@ class TAK_API VulkanBase {
 
   VkQueue graphicsQueue;
   VkQueue presentQueue;
-  //------------------------------swapchain-------------------------
+  //---------------------------swapchain & image view-------------------------
   SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
   VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
@@ -76,4 +76,30 @@ class TAK_API VulkanBase {
   std::vector<VkImage> swapChainImages;
   VkFormat swapChainImageFormat;
   VkExtent2D swapChainExtent;
+
+  std::vector<VkImageView> swapChainImageViews;
+  void createImageViews();
+  //-------------------------graphics pipline-----------------------------------
+  void createGraphicsPipeline();
+  VkShaderModule createShaderModule(const std::vector<char>& code);
+  VkPipelineLayout pipelineLayout;
+  VkPipeline graphicsPipeline;
+  //-----------------------renderpass--------------------
+  void createRenderPass();
+  VkRenderPass renderPass;
+
+  //---------------------frame buffer-----------
+  /*
+    Swapchain gives you an image index.
+    Use the framebuffer that wraps the matching image view.
+    The render pass + pipeline decide how that framebuffer is drawn into.
+  */
+  std::vector<VkFramebuffer> swapChainFramebuffers;
+  void createFramebuffers();
+
+  VkCommandPool commandPool;  // memory manager for command buffers
+  void createCommandPool();
+  VkCommandBuffer commandBuffer;
+  void createCommandBuffer();
+  void recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex);
 };

@@ -61,3 +61,8 @@ target_link_libraries(engine
         spdlog::spdlog   # header‑only
 )
 
+
+# -------------defines--------------
+target_compile_definitions(engine PRIVATE
+    SHADER_DIR="${CMAKE_SOURCE_DIR}/shaders"
+)
