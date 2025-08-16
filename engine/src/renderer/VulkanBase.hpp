@@ -30,6 +30,7 @@ class TAK_API VulkanBase {
   void createInstance();
   void createSurface();
   void mainLoop();
+  void drawFrame();
   void cleanup();
 
   std::vector<const char*> getRequiredExtensions();
@@ -79,6 +80,8 @@ class TAK_API VulkanBase {
 
   std::vector<VkImageView> swapChainImageViews;
   void createImageViews();
+  void recreateSwapChain();
+  void cleanupSwapChain();
   //-------------------------graphics pipline-----------------------------------
   void createGraphicsPipeline();
   VkShaderModule createShaderModule(const std::vector<char>& code);
@@ -99,7 +102,18 @@ class TAK_API VulkanBase {
 
   VkCommandPool commandPool;  // memory manager for command buffers
   void createCommandPool();
-  VkCommandBuffer commandBuffer;
-  void createCommandBuffer();
+  std::vector<VkCommandBuffer> commandBuffers;
+  void createCommandBuffers();
   void recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex);
+
+  //---------------------sync objects----------------
+  std::vector<VkSemaphore> imageAvailableSemaphores;
+  std::vector<VkSemaphore> renderFinishedSemaphores;
+  std::vector<VkFence> inFlightFences;
+  bool framebufferResized = false;
+  const int MAX_FRAMES_IN_FLIGHT = 2;
+  void createSyncObjects();
+  u32 currentFrame = 0;
+  //--------------------call backs----------------
+  static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 };
