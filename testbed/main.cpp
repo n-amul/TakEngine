@@ -3,11 +3,11 @@
 #include <cstdlib>  // For EXIT_SUCCESS / EXIT_FAILURE
 #include <exception>
 
-#include "renderer/VulkanBase.hpp"
+#include "scenes/TriangleScene.hpp"
 
 int main() {
   try {
-    VulkanBase app;
+    TriangleScene app;
     app.run();
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Unhandled exception: {}", e.what());

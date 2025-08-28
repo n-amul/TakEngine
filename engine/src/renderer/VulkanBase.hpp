@@ -2,31 +2,16 @@
 
 #include <spdlog/spdlog.h>
 #include <vulkan/vulkan.h>
-
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <array>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "defines.hpp"
-// -----------------------------------------------------------------------------
-// VulkanBase
-/*
-  generic Vulkan boilerplate
-  Window creation & resize handling
-
-  Vulkan instance, surface, device & queues
-
-  Swapchain + framebuffers
-
-  Render pass (maybe basic one in base, overridable)
-
-  Command pool, synchronization objects
-
-  The main loop & frame presentation
-*/
-// -----------------------------------------------------------------------------
 
 class GLFWwindow;
 
@@ -35,151 +20,167 @@ struct SwapChainSupportDetails {
   std::vector<VkSurfaceFormatKHR> formats;
   std::vector<VkPresentModeKHR> presentModes;
 };
+/*
+child specific objects
+  Graphics Pipeline & Layout
+  Vertex/Index Buffers
+  Descriptor Sets & Layouts
+  Uniform Buffers
+  Textures & Samplers
+  Vertex Data Structures
+generic Vulkan boilerplates (Shared)
+  Core Vulkan Setup
+  Swapchain & Related
+  Render Pass
+  Command Infrastructure
+  Queues
+  Synchronization Objects
+  Validation/Debug Layer
+
+Per-Frame Resources:
+  Command Buffers
+  Synchronization (fences, semaphores)
+
+Per-Swapchain Resources:
+  Swapchain
+  Framebuffers
+  Depth/Color attachments
+
+Static/Long-lived Resources:
+  Render Pass
+  Pipeline & Layout
+  Descriptor Set Layouts
+  Samplers
+
+Dynamic Resources:
+  Vertex/Index Buffers
+  Uniform Buffers
+  Descriptor Sets
+  Textures
+*/
 
 class TAK_API VulkanBase {
  public:
+  virtual ~VulkanBase() = default;
   void run();
 
- private:
-  void initWindow();
-  void initVulkan();
-  void createInstance();
-  void createSurface();
+ protected:
+  // Pure virtual methods that derived classes must implement
+  virtual void createPipeline() = 0;
+  virtual void loadResources() = 0;
+  virtual void recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) = 0;
+  virtual void cleanupResources() = 0;
+
+  // Optional virtual methods
+  virtual void updateScene(float deltaTime) {}
+  virtual void onResize(int width, int height) {}
+
+  virtual void initWindow();
+  virtual void initVulkan();
+
+  // Helper functions accessible to derived classes
+  VkShaderModule createShaderModule(const std::vector<char>& code);
+  uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+  // Main loop and drawing
   void mainLoop();
   void drawFrame();
   void cleanup();
 
-  std::vector<const char*> getRequiredExtensions();
+  // Core Vulkan setup methods
+  void createInstance();
+  void createSurface();
+  void createSwapChain();
+  void createImageViews();
+  void createRenderPass();  // need revise for complex scenes
+  void createFramebuffers();
+  void createCommandPool();
+  void createCommandBuffers();
+  void createSyncObjects();
+  void recreateSwapChain();
+  void cleanupSwapChain();
 
-  GLFWwindow* window = nullptr;
-  u32 window_width = 1920;
-  u32 window_height = 1080;
-  std::string title = "Vulkan Engine";
-  std::string name = "vulkanBase";
+  void recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex);
+  void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
+                    VkDeviceMemory& bufferMemory);
+  void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);  // gpu to gpu
 
-  VkInstance instance;
-  VkSurfaceKHR surface;
-
-  //----------------------------- validation layer---------------------------
-#ifdef NDEBUG
-  const bool enableValidationLayers = false;
-#else
-  const bool enableValidationLayers = true;
-#endif
-  VkDebugUtilsMessengerEXT debugMessenger;
-  const std::vector<const char*> validationLayers = {"VK_LAYER_KHRONOS_validation"};
-  void setupDebugMessenger();
-  bool checkValidationLayerSupport();
-  //--------------------------call backs-----------------------------------
-  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                      VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                                      void* pUserData) {
-    switch (messageSeverity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-        spdlog::error("validation layer: {}", pCallbackData->pMessage);
-        break;
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-        spdlog::warn("validation layer: {}", pCallbackData->pMessage);
-        break;
-      default:  // INFO & VERBOSE
-        spdlog::info("validation layer: {}", pCallbackData->pMessage);
-    }
-    return VK_FALSE;
-  }
-  static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
-    createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    createInfo.pfnUserCallback = debugCallback;
-  }
-  //-----------------------------Device pickup-----------------------
-  const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-  VkDevice device;
+  // Device selection
   void pickPhysicalDevice();
   void createLogicalDevice();
   std::optional<uint32_t> findQueueFamilies(VkPhysicalDevice device);
   bool isDeviceSuitable(VkPhysicalDevice device);
   bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 
-  VkQueue graphicsQueue;
-  VkQueue presentQueue;
-  //---------------------------swapchain & image view-------------------------
+  // Swap chain support
   SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
   VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
   VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-  void createSwapChain();
+
+  // Extensions
+  std::vector<const char*> getRequiredExtensions();
+
+  // Protected members accessible to derived classes
+  GLFWwindow* window = nullptr;
+  u32 window_width = 1920;
+  u32 window_height = 1080;
+  std::string title = "Vulkan Engine";
+  std::string name = "vulkanBase";
+  std::chrono::high_resolution_clock::time_point lastFrameTime;
+
+  VkInstance instance;
+  VkSurfaceKHR surface;
+  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+  VkDevice device;
+
+  VkQueue graphicsQueue;
+  VkQueue presentQueue;
+
   VkSwapchainKHR swapChain;
   std::vector<VkImage> swapChainImages;
   VkFormat swapChainImageFormat;
   VkExtent2D swapChainExtent;
-
   std::vector<VkImageView> swapChainImageViews;
-  void createImageViews();
-  void recreateSwapChain();
-  void cleanupSwapChain();
-  //-------------------------graphics pipline-----------------------------------
-  void createGraphicsPipeline();
-  VkShaderModule createShaderModule(const std::vector<char>& code);
-  VkPipelineLayout pipelineLayout;
-  VkPipeline graphicsPipeline;
-  //-----------------------renderpass--------------------
-  void createRenderPass();
+
   VkRenderPass renderPass;
-
-  //---------------------frame buffer-----------
-  /*
-    Swapchain gives you an image index.
-    Use the framebuffer that wraps the matching image view.
-    The render pass + pipeline decide how that framebuffer is drawn into.
-  */
   std::vector<VkFramebuffer> swapChainFramebuffers;
-  void createFramebuffers();
 
-  VkCommandPool commandPool;  // memory manager for command buffers
-  void createCommandPool();
+  VkCommandPool commandPool;           // For main rendering
+  VkCommandPool transientCommandPool;  // For short-lived operations
   std::vector<VkCommandBuffer> commandBuffers;
-  void createCommandBuffers();
-  void recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex);
 
-  //---------------------sync objects----------------
+  // Synchronization
   std::vector<VkSemaphore> imageAvailableSemaphores;
   std::vector<VkSemaphore> renderFinishedSemaphores;
   std::vector<VkFence> inFlightFences;
-  bool framebufferResized = false;
+
   const int MAX_FRAMES_IN_FLIGHT = 2;
-  void createSyncObjects();
   u32 currentFrame = 0;
-  //--------------------call backs----------------
+  bool framebufferResized = false;
+
+  // Validation layers
+#ifdef NDEBUG
+  const bool enableValidationLayers = false;
+#else
+  const bool enableValidationLayers = true;
+#endif
+
+  VkDebugUtilsMessengerEXT debugMessenger;
+  const std::vector<const char*> validationLayers = {"VK_LAYER_KHRONOS_validation"};
+  const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+ private:
+  // Validation layer setup
+  void setupDebugMessenger();
+  bool checkValidationLayerSupport();
+
+  // Callbacks
+  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                      VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                                      void* pUserData);
+
+  static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
-
-  // ---------------------vertex buffer-----------------
-  VkBuffer vertexBuffer;
-  VkDeviceMemory vertexBufferMemory;
-  void createVertexBuffer();
-  struct Vertex {
-    static VkVertexInputBindingDescription getBindingDescription() {
-      VkVertexInputBindingDescription bindingDescription{};
-      bindingDescription.binding = 0;
-      bindingDescription.stride = sizeof(Vertex);
-      bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-      return bindingDescription;
-    }
-    glm::vec2 pos;
-    glm::vec3 color;
-  };
-  uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-  // temporary data
-  const std::vector<Vertex> vertices = {
-      {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}}, {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
-
-  static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
 };
