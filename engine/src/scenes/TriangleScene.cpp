@@ -4,7 +4,6 @@
 #include <spdlog/spdlog.h>
 
 #include <cstring>
-#include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
 
 #include "../core/utils.hpp"

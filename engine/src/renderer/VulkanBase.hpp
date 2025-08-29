@@ -59,7 +59,7 @@ Dynamic Resources:
   Textures
 */
 
-class TAK_API VulkanBase {
+class VulkanBase {
  public:
   virtual ~VulkanBase() = default;
   void run();

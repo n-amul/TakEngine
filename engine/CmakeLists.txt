@@ -20,6 +20,7 @@ target_include_directories(engine
 target_compile_definitions(engine PRIVATE TEXPORT)
 if(MSVC)
     target_compile_options(engine PRIVATE /wd4996)  
+    target_compile_options(engine PRIVATE "/MP")
 endif()
 
 # ------------------------------------------------------------
@@ -58,6 +59,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
+#----stb_image------------
+file(DOWNLOAD 
+    https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image.h
+    ${CMAKE_CURRENT_BINARY_DIR}/external/stb/stb_image.h
+    STATUS download_status
+)
+list(GET download_status 0 status_code)
+if(NOT status_code EQUAL 0)
+    message(FATAL_ERROR "Failed to download stb_image.h")
+endif()
+
+# Create interface library for stb_image
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/external/stb)
+
 # ---- Link everything into engine.dll ----
 target_link_libraries(engine
     PUBLIC
@@ -65,6 +81,7 @@ target_link_libraries(engine
         glm::glm         # header‑only
         glfw             # static .lib
         spdlog::spdlog   # header‑only
+        stb_image       
 )
 
 
