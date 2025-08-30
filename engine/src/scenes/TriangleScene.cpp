@@ -160,7 +160,6 @@ void TriangleScene::createPipeline() {
 
 void TriangleScene::loadResources() {
   spdlog::info("Loading triangle resources");
-  bufferManager = std::make_unique<BufferManager>(device, physicalDevice, commandPool, graphicsQueue);
   createVertexBuffer();
   createIndexBuffer();
   createDescriptorSetLayout();
@@ -251,7 +250,8 @@ void TriangleScene::createUniformBuffers() {
   uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    uniformBuffers[i] = bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    uniformBuffers[i] =
+        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkMapMemory(device, uniformBuffers[i].memory, 0, bufferSize, 0, &uniformBuffersMapped[i]);
   }
 }
@@ -326,11 +326,6 @@ void TriangleScene::cleanupResources() {
   vertexBuffer = BufferManager::Buffer();
   indexBuffer = BufferManager::Buffer();
   uniformBuffers.clear();
-
-  if (bufferManager) {
-    bufferManager->cleanup();
-    bufferManager.reset();
-  }
 
   // Clean up pipeline
   vkDestroyPipeline(device, graphicsPipeline, nullptr);

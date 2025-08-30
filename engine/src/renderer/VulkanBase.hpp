@@ -12,6 +12,9 @@
 #include <string>
 #include <vector>
 
+#include "BufferManager.hpp"
+#include "CommandBufferUtils.hpp"
+#include "VulkanContext.hpp"
 #include "defines.hpp"
 
 class GLFWwindow;
@@ -59,7 +62,6 @@ Child-Specific Objects (Per-Model/Per-Material/Per-Draw)
   Pipeline (VkPipeline)
   Shader Modules (VkShaderModule)
 */
-
 class TAK_API VulkanBase {
  public:
   virtual ~VulkanBase() = default;
@@ -126,11 +128,14 @@ class TAK_API VulkanBase {
   std::string name = "vulkanBase";
   std::chrono::high_resolution_clock::time_point lastFrameTime;
 
+  std::shared_ptr<VulkanContext> context;
+  std::shared_ptr<CommandBufferUtils> cmdUtils;
+  std::shared_ptr<BufferManager> bufferManager;
+
   VkInstance instance;
   VkSurfaceKHR surface;
   VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
   VkDevice device;
-
   VkQueue graphicsQueue;
   VkQueue presentQueue;
 

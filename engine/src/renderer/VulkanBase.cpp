@@ -152,21 +152,37 @@ void VulkanBase::initWindow() {
 }
 
 void VulkanBase::initVulkan() {
+  // 1. Core Vulkan setup
   createInstance();
   setupDebugMessenger();
   createSurface();
   pickPhysicalDevice();
   createLogicalDevice();
+
+  // 2. Context initialization
+  context = std::make_shared<VulkanContext>();
+  context->instance = instance;
+  context->device = device;
+  context->physicalDevice = physicalDevice;
+  context->graphicsQueue = graphicsQueue;
+  context->presentQueue = presentQueue;
+  // 3. Rendering setup
   createSwapChain();
   createImageViews();
   createRenderPass();
+  // 4. Command pools (needed for resource loading)
+  createCommandPool();
+  context->commandPool = commandPool;
+  context->transientCommandPool = transientCommandPool;
+  // 5. Initialize shared utilities
+  cmdUtils = std::make_shared<CommandBufferUtils>(context);
+  bufferManager = std::make_shared<BufferManager>(context);
 
-  createCommandPool();  // load resources might need command pool
-  // Call derived class to load resources (vertex buffers, textures, etc.)
+  // 6. Let derived class load its resources
   loadResources();
-  // Call derived class to create pipeline
+  // 7. Call derived class to create pipeline
   createPipeline();
-
+  // 8. Final setup
   createFramebuffers();
   createCommandBuffers();
   createSyncObjects();
@@ -579,7 +595,7 @@ void VulkanBase::createCommandPool() {
   // Transient command pool (for copies, transitions, etc.)
   VkCommandPoolCreateInfo transientPoolInfo{};
   transientPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-  transientPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+  transientPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
   transientPoolInfo.queueFamilyIndex = queueFamilyIndices.value();
 
   if (vkCreateCommandPool(device, &transientPoolInfo, nullptr, &transientCommandPool) != VK_SUCCESS) {
@@ -620,7 +636,8 @@ void VulkanBase::createSyncObjects() {
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS || vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+        vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
       throw std::runtime_error("failed to create frame synchronization objects!");
     }
   }
@@ -657,6 +674,10 @@ void VulkanBase::cleanup() {
   cleanupResources();
 
   cleanupSwapChain();
+  // Destroy shared pointers
+  bufferManager.reset();
+  cmdUtils.reset();
+  context.reset();
   // clean up core
   vkDestroyRenderPass(device, renderPass, nullptr);
 
@@ -767,7 +788,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanBase::debugCallback(VkDebugUtilsMessageSeve
 void VulkanBase::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
   createInfo = {};
   createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+  createInfo.messageSeverity =
+      VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
   createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
   createInfo.pfnUserCallback = debugCallback;
 }

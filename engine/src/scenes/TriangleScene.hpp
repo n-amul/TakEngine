@@ -3,8 +3,6 @@
 #include <array>
 #include <vector>
 
-#include "../renderer/BufferManager.hpp"
-#include "../renderer/TextureManager.hpp"
 #include "../renderer/VulkanBase.hpp"
 
 class TAK_API TriangleScene : public VulkanBase {
@@ -71,7 +69,6 @@ class TAK_API TriangleScene : public VulkanBase {
   VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
   // Triangle-specific buffer objects
-  std::unique_ptr<BufferManager> bufferManager;
   BufferManager::Buffer vertexBuffer;
   BufferManager::Buffer indexBuffer;
   std::vector<BufferManager::Buffer> uniformBuffers;
@@ -81,7 +78,7 @@ class TAK_API TriangleScene : public VulkanBase {
   const std::vector<Vertex> vertices = {
       {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
   // textures
-  std::unique_ptr<TextureManager> TextureManager;
+  // std::unique_ptr<TextureManager> TextureManager;
 
   f32 rotationAngle = 0.0f;
   f32 totalTime = 0.0f;

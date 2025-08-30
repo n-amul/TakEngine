@@ -2,10 +2,12 @@
 
 #include <vulkan/vulkan.h>
 
+#include <memory>
 #include <vector>
 
+#include "CommandBufferUtils.hpp"
+#include "VulkanContext.hpp"
 #include "defines.hpp"
-
 TAK_API class BufferManager {
  public:
   struct Buffer {
@@ -61,13 +63,11 @@ TAK_API class BufferManager {
   };
 
  private:
-  VkDevice device;
-  VkPhysicalDevice physicalDevice;
-  VkCommandPool commandPool;
-  VkQueue queue;
+  std::shared_ptr<VulkanContext> context;
+  std::unique_ptr<CommandBufferUtils> cmdUtils;
 
  public:
-  BufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+  BufferManager(std::shared_ptr<VulkanContext> ctx);
 
   // Create a buffer with specified properties
   Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
@@ -80,11 +80,8 @@ TAK_API class BufferManager {
   // Destroy a buffer (explicitly calls destructor's cleanup)
   void destroyBuffer(Buffer& buffer);
 
-  // Cleanup resources
-  void cleanup();
-
- private:
-  // Find suitable memory type
+  //  void cleanup();
+  //  Find suitable memory type
   u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 
   // Copy buffer using command buffer

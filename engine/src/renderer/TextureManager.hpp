@@ -1,49 +1,48 @@
-#pragma once
-#include <vulkan/vulkan.h>
+// #pragma once
+// #include <vulkan/vulkan.h>
 
-#include <array>
-#include <memory>
-#include <string>
-#include <unordered_map>
+// #include <array>
+// #include <memory>
+// #include <string>
+// #include <unordered_map>
 
-#include "BufferManager.hpp"
-#include "defines.hpp"
+// #include "BufferManager.hpp"
+// #include "CommandBufferUtils.hpp"
+// #include "defines.hpp"
 
-TAK_API class TextureManager {
- public:
-  struct Texture {
-    VkImage image;
-    VkDeviceMemory memory;
-    VkImageView view;
-    VkSampler sampler;
-  };
+// TAK_API class TextureManager {
+//  public:
+//   struct Texture {
+//     VkImage image;
+//     VkDeviceMemory memory;
+//     VkImageView view;
+//     VkSampler sampler;
+//   };
 
- private:
-  VkDevice device;
-  VkPhysicalDevice physicalDevice;
-  VkCommandPool commandPool;
-  VkQueue graphicsQueue;
+//  private:
+//   VkDevice device;
+//   VkPhysicalDevice physicalDevice;
+//   VkCommandPool commandPool;
+//   VkQueue graphicsQueue;
 
-  std::unique_ptr<BufferManager> bufferManager;
-  std::unordered_map<std::string, Texture> loadedTextures;
+//   std::shared_ptr<CommandBufferUtils> cmdUtils;
+//   std::unique_ptr<BufferManager> bufferManager;
+//   std::unordered_map<std::string, Texture> loadedTextures;
 
- public:
-  TextureManager(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue)
-      : device(device), physicalDevice(physicalDevice), commandPool(commandPool), graphicsQueue(graphicsQueue) {
-    bufferManager = std::make_unique<BufferManager>(device, physicalDevice, commandPool, graphicsQueue);
-  }
-  ~TextureManager() {
-    // addcleanup function
-    bufferManager->cleanup();
-    bufferManager.reset();
-  }
+//  public:
+//   TextureManager(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue, std::shared_ptr<CommandBufferUtils> cmdUtils)
+//       : device(device), physicalDevice(physicalDevice), commandPool(commandPool), graphicsQueue(graphicsQueue), cmdUtils(cmdUtils) {
+//     bufferManager = std::make_unique<BufferManager>(device, physicalDevice, commandPool, graphicsQueue);
+//   }
+//   ~TextureManager() {}
 
-  // Simple interface
-  VkImageView loadTexture(const std::string& filepath);
-  void cleanup();
+//   // Simple interface
+//   VkImageView loadTexture(const std::string& filepath);
+//   void cleanup();
 
- private:
-  void createTextureImage(const std::string& filepath, Texture& texture);
-  void createTextureImageView(Texture& texture);
-  void createTextureSampler(Texture& texture);
-};
+//  private:
+//   void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, Texture texture);
+//   void createTextureImage(const std::string& filepath, Texture& texture);
+//   void createTextureImageView(Texture& texture);
+//   void createTextureSampler(Texture& texture);
+// };
