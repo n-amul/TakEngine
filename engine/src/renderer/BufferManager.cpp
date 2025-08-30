@@ -3,55 +3,11 @@
 #include <cstring>
 #include <stdexcept>
 
-BufferManager::Buffer::Buffer(VkDevice dev) : device(dev) {}
-
-BufferManager::Buffer::Buffer(Buffer&& other) noexcept
-    : buffer(other.buffer), memory(other.memory), size(other.size), device(other.device) {
-  other.buffer = VK_NULL_HANDLE;
-  other.memory = VK_NULL_HANDLE;
-  other.size = 0;
-}
-
-BufferManager::Buffer& BufferManager::Buffer::operator=(Buffer&& other) noexcept {
-  // steal the other's resources and other will lose ownership using move() implicitly
-  if (this != &other) {
-    cleanup();
-
-    buffer = other.buffer;
-    memory = other.memory;
-    size = other.size;
-    device = other.device;
-
-    // Clear the source
-    other.buffer = VK_NULL_HANDLE;
-    other.memory = VK_NULL_HANDLE;
-    other.size = 0;
-  }
-  return *this;
-}
-
-BufferManager::Buffer::~Buffer() { cleanup(); }
-
-void BufferManager::Buffer::cleanup() {
-  if (device != VK_NULL_HANDLE) {
-    if (buffer != VK_NULL_HANDLE) {
-      vkDestroyBuffer(device, buffer, nullptr);
-      buffer = VK_NULL_HANDLE;
-    }
-    if (memory != VK_NULL_HANDLE) {
-      vkFreeMemory(device, memory, nullptr);
-      memory = VK_NULL_HANDLE;
-    }
-  }
-  size = 0;
-}
-
 // BufferManager implementation
 BufferManager::BufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue)
     : device(device), physicalDevice(physicalDevice), commandPool(commandPool), queue(queue) {}
 
-BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                                                  VkMemoryPropertyFlags properties) {
+BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties) {
   Buffer buffer(device);  // Initialize with device handle
   buffer.size = size;
 
@@ -77,74 +33,37 @@ BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsa
     vkDestroyBuffer(device, buffer.buffer, nullptr);
     throw std::runtime_error("failed to allocate buffer memory!");
   }
-
+  // link buffer to memory somewhere in gpu
   vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0);
 
   return buffer;
 }
 
-BufferManager::Buffer BufferManager::createVertexBuffer(const void* vertexData, VkDeviceSize size) {
+BufferManager::Buffer BufferManager::createGPULocalBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage) {
+  if (!data || size == 0) {
+    throw std::runtime_error("Invalid data or size for GPU buffer creation");
+  }
+
   // Create staging buffer
-  Buffer stagingBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  Buffer stagingBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
   // Copy data to staging buffer
-  void* data;
-  vkMapMemory(device, stagingBuffer.memory, 0, size, 0, &data);
-  memcpy(data, vertexData, size);
-  vkUnmapMemory(device, stagingBuffer.memory);
+  updateBuffer(stagingBuffer, data, size, 0);
 
-  // Create device local buffer
-  Buffer vertexBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  // Create device local buffer with the specified usage
+  Buffer deviceBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
   // Copy from staging to device
-  copyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, size);
+  copyBuffer(stagingBuffer.buffer, deviceBuffer.buffer, size);
 
   // Clean up staging buffer
   destroyBuffer(stagingBuffer);
 
-  return vertexBuffer;
+  return deviceBuffer;
 }
-
-BufferManager::Buffer BufferManager::createIndexBuffer(const void* indexData, VkDeviceSize size) {
-  // Create staging buffer
-  Buffer stagingBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-  // Copy data to staging buffer
-  void* data;
-  vkMapMemory(device, stagingBuffer.memory, 0, size, 0, &data);
-  memcpy(data, indexData, size);
-  vkUnmapMemory(device, stagingBuffer.memory);
-
-  // Create device local buffer
-  Buffer indexBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-  // Copy from staging to device
-  copyBuffer(stagingBuffer.buffer, indexBuffer.buffer, size);
-
-  // Clean up staging buffer
-  destroyBuffer(stagingBuffer);
-
-  return indexBuffer;
-}
-
-BufferManager::Buffer BufferManager::createUniformBuffer(VkDeviceSize size) {
-  return createBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-}
-
-void* BufferManager::mapBuffer(const Buffer& buffer) {
-  void* data;
-  vkMapMemory(device, buffer.memory, 0, buffer.size, 0, &data);
-  return data;
-}
-
-void BufferManager::unmapBuffer(const Buffer& buffer) { vkUnmapMemory(device, buffer.memory); }
 
 void BufferManager::updateBuffer(const Buffer& buffer, const void* data, VkDeviceSize size, VkDeviceSize offset) {
+  // only VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT buffer works
   void* mappedData;
   vkMapMemory(device, buffer.memory, offset, size, 0, &mappedData);
   memcpy(mappedData, data, size);
@@ -152,7 +71,7 @@ void BufferManager::updateBuffer(const Buffer& buffer, const void* data, VkDevic
 }
 
 void BufferManager::destroyBuffer(Buffer& buffer) {
-  buffer = Buffer();  // Move-assign an empty buffer, triggering cleanup
+  buffer = Buffer();  // Move-assign an empty buffer, triggering Buffer::cleanup
 }
 
 void BufferManager::cleanup() {
@@ -202,6 +121,8 @@ void BufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
 
   vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
   vkQueueWaitIdle(queue);
+  // A fence would allow to schedule multiple transfers simultaneously and wait for all of them complete, instead of
+  // executing one at a time. That may give the driver more opportunities to optimize.
 
   vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }

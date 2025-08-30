@@ -7,6 +7,7 @@
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,45 +22,45 @@ struct SwapChainSupportDetails {
   std::vector<VkPresentModeKHR> presentModes;
 };
 /*
-child specific objects
-  Graphics Pipeline & Layout
-  Vertex/Index Buffers
-  Descriptor Sets & Layouts
+struture of this class
+Generic Vulkan Boilerplate
+  Instance (VkInstance)
+  Physical Device (VkPhysicalDevice)
+  Logical Device (VkDevice)
+  Surface (VkSurfaceKHR)
+  Swapchain (VkSwapchainKHR)
+  Swapchain Images (obtained from swapchain)
+  Swapchain Image Views (VkImageView)
+  Render Pass (VkRenderPass)
+  Framebuffers (VkFramebuffer)
+  Command Pool (VkCommandPool)
+  Command Buffers (VkCommandBuffer)
+  Queue (VkQueue)
+  Semaphores (VkSemaphore)
+  Fences (VkFence)
+  Events (VkEvent)
+  Pipeline Layout (VkPipelineLayout) - could be shared
+  Descriptor Set Layout (VkDescriptorSetLayout) - could be shared
+  Descriptor Pool (VkDescriptorPool)
+  Pipeline Cache (VkPipelineCache)
+  Debug Utils Messenger (VkDebugUtilsMessengerEXT)
+  Validation Layers
+Child-Specific Objects (Per-Model/Per-Material/Per-Draw)
+  Descriptor Sets (VkDescriptorSet)
+  Buffers (VkBuffer)
+  Vertex Buffers
+  Index Buffers
   Uniform Buffers
-  Textures & Samplers
-  Vertex Data Structures
-generic Vulkan boilerplates (Shared)
-  Core Vulkan Setup
-  Swapchain & Related
-  Render Pass
-  Command Infrastructure
-  Queues
-  Synchronization Objects
-  Validation/Debug Layer
-
-Per-Frame Resources:
-  Command Buffers
-  Synchronization (fences, semaphores)
-
-Per-Swapchain Resources:
-  Swapchain
-  Framebuffers
-  Depth/Color attachments
-
-Static/Long-lived Resources:
-  Render Pass
-  Pipeline & Layout
-  Descriptor Set Layouts
-  Samplers
-
-Dynamic Resources:
-  Vertex/Index Buffers
-  Uniform Buffers
-  Descriptor Sets
-  Textures
+  Storage Buffers
+  Images/Textures (VkImage)
+  Image Views (VkImageView)
+  Buffer Views (VkBufferView)
+  Samplers (VkSampler) - could be shared
+  Pipeline (VkPipeline)
+  Shader Modules (VkShaderModule)
 */
 
-class VulkanBase {
+class TAK_API VulkanBase {
  public:
   virtual ~VulkanBase() = default;
   void run();
@@ -80,7 +81,6 @@ class VulkanBase {
 
   // Helper functions accessible to derived classes
   VkShaderModule createShaderModule(const std::vector<char>& code);
-  uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
   // Main loop and drawing
   void mainLoop();
@@ -101,9 +101,6 @@ class VulkanBase {
   void cleanupSwapChain();
 
   void recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex);
-  void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
-                    VkDeviceMemory& bufferMemory);
-  void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);  // gpu to gpu
 
   // Device selection
   void pickPhysicalDevice();
@@ -176,10 +173,8 @@ class VulkanBase {
   bool checkValidationLayerSupport();
 
   // Callbacks
-  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                      VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                                      void* pUserData);
+  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
   static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);

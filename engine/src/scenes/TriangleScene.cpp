@@ -1,4 +1,3 @@
-// TriangleScene.cpp
 #include "TriangleScene.hpp"
 
 #include <spdlog/spdlog.h>
@@ -89,8 +88,7 @@ void TriangleScene::createPipeline() {
 
   // Color blending
   VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-  colorBlendAttachment.colorWriteMask =
-      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
   colorBlendAttachment.blendEnable = VK_FALSE;
   colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
   colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
@@ -162,6 +160,7 @@ void TriangleScene::createPipeline() {
 
 void TriangleScene::loadResources() {
   spdlog::info("Loading triangle resources");
+  bufferManager = std::make_unique<BufferManager>(device, physicalDevice, commandPool, graphicsQueue);
   createVertexBuffer();
   createIndexBuffer();
   createDescriptorSetLayout();
@@ -172,47 +171,12 @@ void TriangleScene::loadResources() {
 
 void TriangleScene::createVertexBuffer() {
   VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-  // Staging buffer proporties: The CPU can directly access this memory & CPU and GPU automatically stay in sync
-  VkBuffer stagingBuffer;
-  VkDeviceMemory stagingBufferMemory;
-  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
-               stagingBufferMemory);
-
-  void* data;
-  vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-  memcpy(data, vertices.data(), (size_t)bufferSize);
-  vkUnmapMemory(device, stagingBufferMemory);
-
-  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
-  // transfer staging to vertex
-  copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-  vkDestroyBuffer(device, stagingBuffer, nullptr);
-  vkFreeMemory(device, stagingBufferMemory, nullptr);
+  vertexBuffer = bufferManager->createGPULocalBuffer(vertices.data(), bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 void TriangleScene::createIndexBuffer() {
   VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-  VkBuffer stagingBuffer;
-  VkDeviceMemory stagingBufferMemory;
-  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer,
-               stagingBufferMemory);
-
-  void* data;
-  vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-  memcpy(data, indices.data(), (size_t)bufferSize);
-  vkUnmapMemory(device, stagingBufferMemory);
-
-  createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
-
-  copyBuffer(stagingBuffer, indexBuffer, bufferSize);
-
-  vkDestroyBuffer(device, stagingBuffer, nullptr);
-  vkFreeMemory(device, stagingBufferMemory, nullptr);
+  indexBuffer = bufferManager->createGPULocalBuffer(indices.data(), bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 void TriangleScene::createDescriptorPool() {
   VkDescriptorPoolSize poolSize{};
@@ -264,7 +228,7 @@ void TriangleScene::createDescriptorSets() {
   // configure we pass uniformbuffers
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = uniformBuffers[i];
+    bufferInfo.buffer = uniformBuffers[i].buffer;
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(UniformBufferObject);
 
@@ -283,17 +247,12 @@ void TriangleScene::createDescriptorSets() {
 
 void TriangleScene::createUniformBuffers() {
   VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-
   uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-  uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
   uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i],
-                 uniformBuffersMemory[i]);
-
-    vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+    uniformBuffers[i] = bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    vkMapMemory(device, uniformBuffers[i].memory, 0, bufferSize, 0, &uniformBuffersMapped[i]);
   }
 }
 
@@ -303,12 +262,10 @@ void TriangleScene::updateUniformBuffer(f32 deltatime) {
   UniformBufferObject ubo{};
 
   ubo.model = glm::rotate(glm::mat4(1.0f), totalTime * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
   ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
   ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (f32)swapChainExtent.height, 0.1f, 10.0f);
-
   ubo.proj[1][1] *= -1;  // flip y coord
+
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 }
 
@@ -335,43 +292,45 @@ void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t
   scissor.extent = swapChainExtent;
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-  // Bind vertex buffer
-  VkBuffer vertexBuffers[] = {vertexBuffer};
+  // Bind vertex and index buffer
+  VkBuffer vertexBuffers[] = {vertexBuffer.buffer};
   VkDeviceSize offsets[] = {0};
   vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-  vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+  vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
   // Draw the triangle
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-                          &descriptorSets[currentFrame], 0, nullptr);
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 }
 
 void TriangleScene::updateScene(float deltaTime) { updateUniformBuffer(deltaTime); }
 
 void TriangleScene::onResize(int width, int height) {
-  // Optional: Handle window resize
   // The base class already handles swapchain recreation
-  // You might need to update aspect ratio in projection matrix here
+  // Might need to update aspect ratio in projection matrix here
   spdlog::info("Triangle scene resized to {}x{}", width, height);
 }
 
 void TriangleScene::cleanupResources() {
   spdlog::info("Cleaning up triangle resources");
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-  // Clean up buffers
+  // unmap the uniformbuffer pointers
   for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    vkDestroyBuffer(device, uniformBuffers[i], nullptr);  // Assume: order doent matter right..?
-    vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+    if (uniformBuffers[i].memory != VK_NULL_HANDLE) {
+      vkUnmapMemory(device, uniformBuffers[i].memory);
+    }
   }
+  // Clean up buffers
+  vertexBuffer = BufferManager::Buffer();
+  indexBuffer = BufferManager::Buffer();
+  uniformBuffers.clear();
 
-  vkDestroyBuffer(device, indexBuffer, nullptr);
-  vkFreeMemory(device, indexBufferMemory, nullptr);
-  vkDestroyBuffer(device, vertexBuffer, nullptr);
-  vkFreeMemory(device, vertexBufferMemory, nullptr);
+  if (bufferManager) {
+    bufferManager->cleanup();
+    bufferManager.reset();
+  }
 
   // Clean up pipeline
   vkDestroyPipeline(device, graphicsPipeline, nullptr);
