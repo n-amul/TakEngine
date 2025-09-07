@@ -2,7 +2,7 @@
 echo Compiling shaders...
 
 :: Path to Vulkan SDK's glslc
-set GLSLC=C:/VulkanSDK/1.4.313.2/Bin/glslc.exe
+set GLSLC=C:/VulkanSDK/1.4.321.0/Bin/glslc.exe
 
 :: Change to the shaders directory
 cd /d "%~dp0"

@@ -6,89 +6,95 @@
 #include "../renderer/VulkanBase.hpp"
 
 class TAK_API TriangleScene : public VulkanBase {
- public:
-  TriangleScene();
-  ~TriangleScene() override = default;
+  public:
+    TriangleScene();
+    ~TriangleScene() override = default;
 
- protected:
-  // Pure virtual methods
-  void createPipeline() override;
-  void loadResources() override;
-  void recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) override;
-  void cleanupResources() override;
+  protected:
+    // Pure virtual methods
+    void createPipeline() override;
+    void loadResources() override;
+    void recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) override;
+    void cleanupResources() override;
 
-  // Optional virtual methods from VulkanBase
-  void updateScene(float deltaTime) override;
-  void onResize(int width, int height) override;
+    // Optional virtual methods from VulkanBase
+    void updateScene(float deltaTime) override;
+    void onResize(int width, int height) override;
 
- private:
-  // meet 16bit alignment
-  struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-  };
-  // Scene-specific vertex structure
-  struct Vertex {
-    glm::vec2 pos;
-    glm::vec3 color;
+  private:
+    // meet 16bit alignment
+    struct UniformBufferObject {
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+    };
+    // Scene-specific vertex structure
+    struct Vertex {
+        glm::vec2 pos;
+        glm::vec3 color;
+        glm::vec2 texCoord;
 
-    static VkVertexInputBindingDescription getBindingDescription() {
-      VkVertexInputBindingDescription bindingDescription{};
-      bindingDescription.binding = 0;
-      bindingDescription.stride = sizeof(Vertex);
-      bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-      return bindingDescription;
-    }
+        static VkVertexInputBindingDescription getBindingDescription() {
+            VkVertexInputBindingDescription bindingDescription{};
+            bindingDescription.binding = 0;
+            bindingDescription.stride = sizeof(Vertex);
+            bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+            return bindingDescription;
+        }
+        static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+            std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+            // position attribute
+            attributeDescriptions[0].binding = 0;
+            attributeDescriptions[0].location = 0;
+            attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[0].offset = offsetof(Vertex, pos);
+            // color
+            attributeDescriptions[1].binding = 0;
+            attributeDescriptions[1].location = 1;
+            attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+            attributeDescriptions[1].offset = offsetof(Vertex, color);
+            // tex coord uv
+            attributeDescriptions[2].binding = 0;
+            attributeDescriptions[2].location = 2;
+            attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-      std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+            return attributeDescriptions;
+        }
+    };
 
-      // Position attribute
-      attributeDescriptions[0].binding = 0;
-      attributeDescriptions[0].location = 0;
-      attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-      attributeDescriptions[0].offset = offsetof(Vertex, pos);
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;
 
-      // Color attribute
-      attributeDescriptions[1].binding = 0;
-      attributeDescriptions[1].location = 1;
-      attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-      attributeDescriptions[1].offset = offsetof(Vertex, color);
+    // Triangle-specific pipeline objects
+    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
-      return attributeDescriptions;
-    }
-  };
-  // TODO: consider moving all these to parent class
-  VkDescriptorSetLayout descriptorSetLayout;
-  VkDescriptorPool descriptorPool;
-  std::vector<VkDescriptorSet> descriptorSets;
+    // Triangle-specific buffer objects
+    BufferManager::Buffer vertexBuffer;
+    BufferManager::Buffer indexBuffer;
+    std::vector<BufferManager::Buffer> uniformBuffers;
+    std::vector<void*> uniformBuffersMapped;
 
-  // Triangle-specific pipeline objects
-  VkPipeline graphicsPipeline = VK_NULL_HANDLE;
-  VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    TextureManager::Texture rectTexture;
 
-  // Triangle-specific buffer objects
-  BufferManager::Buffer vertexBuffer;
-  BufferManager::Buffer indexBuffer;
-  std::vector<BufferManager::Buffer> uniformBuffers;
-  std::vector<void*> uniformBuffersMapped;
+    const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
+    const std::vector<Vertex> vertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+                                          {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+                                          {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+                                          {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
 
-  const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
-  const std::vector<Vertex> vertices = {
-      {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
-  // textures
-  // std::unique_ptr<TextureManager> TextureManager;
+    f32 rotationAngle = 0.0f;
+    f32 totalTime = 0.0f;
 
-  f32 rotationAngle = 0.0f;
-  f32 totalTime = 0.0f;
-
-  // resource
-  void createVertexBuffer();
-  void createIndexBuffer();
-  void createDescriptorPool();
-  void createDescriptorSetLayout();
-  void createDescriptorSets();
-  void createUniformBuffers();
-  void updateUniformBuffer(f32 deltatime);
+    // resource
+    void createVertexBuffer();
+    void createIndexBuffer();
+    void createDescriptorPool();
+    void createDescriptorSetLayout();
+    void createDescriptorSets();
+    void createUniformBuffers();
+    void updateUniformBuffer(f32 deltatime);
+    void createTextures();
 };
