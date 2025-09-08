@@ -69,6 +69,15 @@ void TextureManager::transitionImageLayout(Texture& texture, VkImageLayout oldLa
 
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
+    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        // if has stencil bit
+        if (texture.format == VK_FORMAT_D32_SFLOAT_S8_UINT || texture.format == VK_FORMAT_D24_UNORM_S8_UINT) {
+            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+    } else {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
 
     if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
         barrier.srcAccessMask = 0;
@@ -83,6 +92,14 @@ void TextureManager::transitionImageLayout(Texture& texture, VkImageLayout oldLa
 
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+               newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     } else {
         throw std::invalid_argument("unsupported layout transition!");
     }
@@ -123,13 +140,13 @@ VkSampler TextureManager::createTextureSampler(VkFilter filter, VkSamplerAddress
     return sampler;
 }
 
-VkImageView TextureManager::createImageView(VkImage image, VkFormat format) {
+VkImageView TextureManager::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = format;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // TODO hard coded rn: add depth/stencil support
+    viewInfo.subresourceRange.aspectMask = aspectFlags;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
@@ -204,7 +221,7 @@ TextureManager::Texture TextureManager::createTextureFromFile(const std::string&
     cmdUtils->endSingleTimeCommands(commandBuffer);
 
     // // Create imageview and sampler
-    texture.imageView = createImageView(texture.image, format);
+    texture.imageView = createImageView(texture.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
     texture.sampler = createTextureSampler();
     // Staging buffer will be cleaned up by its destructor
     return texture;

@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -49,6 +50,7 @@ Generic Vulkan Boilerplate
   Pipeline Cache (VkPipelineCache)
   Debug Utils Messenger (VkDebugUtilsMessengerEXT)
   Validation Layers
+  depthBuffer;
 Child-Specific Objects (Per-Model/Per-Material/Per-Draw)
   Descriptor Sets (VkDescriptorSet)
   Buffers (VkBuffer)
@@ -99,6 +101,7 @@ class TAK_API VulkanBase {
     void createFramebuffers();
     void createCommandPool();
     void createCommandBuffers();
+    void createDepthResources();
     void createSyncObjects();
     void recreateSwapChain();
     void cleanupSwapChain();
@@ -162,6 +165,8 @@ class TAK_API VulkanBase {
     const int MAX_FRAMES_IN_FLIGHT = 2;
     u32 currentFrame = 0;
     bool framebufferResized = false;
+
+    TextureManager::Texture depthBuffer;
 
     // Validation layers
 #ifdef NDEBUG

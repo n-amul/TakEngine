@@ -67,10 +67,11 @@ class BufferManager {
 
   private:
     std::shared_ptr<VulkanContext> context;
-    std::unique_ptr<CommandBufferUtils> cmdUtils;
+    std::shared_ptr<CommandBufferUtils> cmdUtils;
 
   public:
-    BufferManager(std::shared_ptr<VulkanContext> ctx);
+    BufferManager(std::shared_ptr<VulkanContext> ctx, std::shared_ptr<CommandBufferUtils> cmdUtils)
+        : context(ctx), cmdUtils(cmdUtils) {};
 
     // Create a buffer with specified properties
     Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);

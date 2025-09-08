@@ -143,7 +143,8 @@ class TextureManager {
     void cleanup();
     TextureManager::Texture createTextureFromFile(const std::string& filepath,
                                                   VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
-    VkImageView createImageView(VkImage image, VkFormat format);
+    VkImageView createImageView(VkImage image, VkFormat format,
+                                VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT);
     VkSampler createTextureSampler(VkFilter filter = VK_FILTER_LINEAR,
                                    VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
     void InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,

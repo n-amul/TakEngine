@@ -122,10 +122,11 @@ void VulkanBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageInd
     renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapChainExtent;
-
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    std::array<VkClearValue, 2> clearValues{}; // should be identical to order of attachments in renderpass
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -139,6 +140,36 @@ void VulkanBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageInd
     }
 }
 
+void VulkanBase::createDepthResources() {
+    auto findDepthFormat = [this]() -> VkFormat {
+        auto findSupportedFormat = [this](const std::vector<VkFormat>& candidates, VkImageTiling tiling,
+                                          VkFormatFeatureFlags features) -> VkFormat {
+            for (VkFormat format : candidates) {
+                VkFormatProperties props;
+                vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+
+                if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
+                    return format;
+                } else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+                    return format;
+                }
+            }
+            throw std::runtime_error("Failed to find supported format");
+        };
+        // most desired to less desired format
+        return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+                                   VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    };
+    if (depthBuffer.format == VK_FORMAT_UNDEFINED) {
+        depthBuffer.format = findDepthFormat();
+    }
+    textureManager->InitTexture(depthBuffer, swapChainExtent.width, swapChainExtent.height, depthBuffer.format,
+                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    depthBuffer.imageView =
+        textureManager->createImageView(depthBuffer.image, depthBuffer.format, VK_IMAGE_ASPECT_DEPTH_BIT);
+    // image tranition take place in renderpass
+}
 //-----------------------------------------------------------
 // Initialization
 //-----------------------------------------------------------
@@ -181,13 +212,14 @@ void VulkanBase::initVulkan() {
     spdlog::info("Creating utils...");
     // 4. Initialize shared utilities
     cmdUtils = std::make_shared<CommandBufferUtils>(context);
-    bufferManager = std::make_shared<BufferManager>(context);
+    bufferManager = std::make_shared<BufferManager>(context, cmdUtils);
     textureManager = std::make_shared<TextureManager>(context, cmdUtils, bufferManager);
 
     spdlog::info("Creating swapchain & renderpass...");
     // 5. Rendering setup
     createSwapChain();
     createImageViews();
+    createDepthResources();
     createRenderPass();
 
     // 6. Let derived class load its resources
@@ -331,8 +363,7 @@ std::optional<u32> VulkanBase::findQueueFamilies(VkPhysicalDevice device) {
             return i;
         }
     }
-
-    spdlog::error("No suitable queue family found!");
+    throw std::runtime_error("no suitable queue family found");
     return std::nullopt;
 }
 
@@ -416,7 +447,8 @@ void VulkanBase::createImageViews() {
     swapChainImageViews.resize(swapChainImages.size());
 
     for (size_t i = 0; i < swapChainImages.size(); i++) {
-        swapChainImageViews[i] = textureManager->createImageView(swapChainImages[i], swapChainImageFormat);
+        swapChainImageViews[i] =
+            textureManager->createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 }
 
@@ -435,9 +467,11 @@ void VulkanBase::recreateSwapChain() {
     onResize(width, height);
 
     cleanupSwapChain();
+    depthBuffer = TextureManager::Texture();
 
     createSwapChain();
     createImageViews();
+    createDepthResources();
     createFramebuffers();
 }
 
@@ -532,23 +566,41 @@ void VulkanBase::createRenderPass() {
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = depthBuffer.format;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -566,13 +618,14 @@ void VulkanBase::createFramebuffers() {
     swapChainFramebuffers.resize(swapChainImageViews.size());
 
     for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        VkImageView attachments[] = {swapChainImageViews[i]};
+        // bundle together all the imageview that a render pass will draw to simultaneously
+        std::array<VkImageView, 2> attachments = {swapChainImageViews[i], depthBuffer.imageView};
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        framebufferInfo.pAttachments = attachments.data();
         framebufferInfo.width = swapChainExtent.width;
         framebufferInfo.height = swapChainExtent.height;
         framebufferInfo.layers = 1;
@@ -678,7 +731,7 @@ void VulkanBase::cleanup() {
     vkDeviceWaitIdle(device);
     // Clean up derived class resources FIRST
     cleanupResources();
-
+    depthBuffer = TextureManager::Texture();
     cleanupSwapChain();
     // Destroy shared pointers
     bufferManager.reset();

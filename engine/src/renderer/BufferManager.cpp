@@ -3,12 +3,6 @@
 #include <cstring>
 #include <stdexcept>
 
-// BufferManager implementation
-BufferManager::BufferManager(std::shared_ptr<VulkanContext> ctx) : context(ctx) {
-    // consider making util classes shared
-    cmdUtils = std::make_unique<CommandBufferUtils>(context);
-}
-
 BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                                                   VkMemoryPropertyFlags properties) {
     Buffer buffer(context->device); // Initialize with device handle
