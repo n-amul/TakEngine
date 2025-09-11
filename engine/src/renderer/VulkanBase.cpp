@@ -587,12 +587,15 @@ void VulkanBase::createRenderPass() {
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
-
+    // Don't start rendering to an image until whatever was using it before is completely done with it.
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
+    // Wait for any previous operations that were writing to color attachments or doing late depth tests to completely
+    // finish.
     dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    // Don't start writing to color attachments or doing early depth tests until the source operations are done.
     dependency.dstStageMask =
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -618,7 +621,7 @@ void VulkanBase::createFramebuffers() {
     swapChainFramebuffers.resize(swapChainImageViews.size());
 
     for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        // bundle together all the imageview that a render pass will draw to simultaneously
+        // TODO: create depthbuffer for each swapchain images(colors)
         std::array<VkImageView, 2> attachments = {swapChainImageViews[i], depthBuffer.imageView};
 
         VkFramebufferCreateInfo framebufferInfo{};

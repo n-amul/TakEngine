@@ -59,8 +59,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spdlog)
 
-#----stb_image------------
-# ---- stb_image ----
+#----stb_image (single header)------------
 file(DOWNLOAD 
     https://raw.githubusercontent.com/nothings/stb/master/stb_image.h
     ${CMAKE_CURRENT_BINARY_DIR}/external/stb/stb_image.h
@@ -68,6 +67,14 @@ file(DOWNLOAD
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/external/stb)
+
+# ---- tinygltf ----
+FetchContent_Declare(
+    tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG        v2.8.21   # pick a stable release
+)
+FetchContent_MakeAvailable(tinygltf)
 
 # ---- Link everything into engine.dll ----
 target_link_libraries(engine
@@ -77,6 +84,7 @@ target_link_libraries(engine
         glfw             # static .lib
         spdlog::spdlog   # header‑only
         stb_image       
+        tinygltf            
 )
 
 
