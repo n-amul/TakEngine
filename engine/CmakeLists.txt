@@ -60,13 +60,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(spdlog)
 
 #----stb_image (single header)------------
-file(DOWNLOAD 
-    https://raw.githubusercontent.com/nothings/stb/master/stb_image.h
-    ${CMAKE_CURRENT_BINARY_DIR}/external/stb/stb_image.h
-)
+# file(DOWNLOAD 
+#     https://raw.githubusercontent.com/nothings/stb/master/stb_image.h
+#     ${CMAKE_CURRENT_BINARY_DIR}/external/stb/stb_image.h
+# )
 
-add_library(stb_image INTERFACE)
-target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/external/stb)
+# add_library(stb_image INTERFACE)
+# target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/external/stb)
 
 # ---- tinygltf ----
 FetchContent_Declare(
@@ -83,7 +83,7 @@ target_link_libraries(engine
         glm::glm         # header‑only
         glfw             # static .lib
         spdlog::spdlog   # header‑only
-        stb_image       
+        # stb_image       
         tinygltf            
 )
 
