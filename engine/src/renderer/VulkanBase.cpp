@@ -35,7 +35,7 @@ void VulkanBase::mainLoop() {
 
     // Process input and update camera
     processInput(deltaTime);
-    camera->Update();  // Update camera matrices
+    camera.update(deltaTime);
 
     updateScene(deltaTime);  // Virtual method - default does nothing
     drawFrame();
@@ -178,23 +178,22 @@ void VulkanBase::initWindow() {
 
   window = glfwCreateWindow(window_width, window_height, title.c_str(), nullptr, nullptr);
   glfwSetWindowUserPointer(window, this);
-  // call backs
   glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+
+  // Set input callbacks
   glfwSetKeyCallback(window, keyCallback);
   glfwSetCursorPosCallback(window, mouseCallback);
-  glfwSetMouseButtonCallback(window, mouseButtonCallback);
   glfwSetScrollCallback(window, scrollCallback);
+  glfwSetMouseButtonCallback(window, mouseButtonCallback);
+
   // Capture mouse by default
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   // Initialize camera
-  camera = std::make_unique<Camera>();
-  camera->SetPosition(glm::vec3(0, -5, 2));  // Default position
-  camera->SetLookAt(glm::vec3(0, 0, 0));
-  camera->SetViewport(0, 0, window_width, window_height);
-  camera->SetClipping(0.1, 1000.0);
-  camera->SetFOV(45.0);
+  camera.initialize(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+  // Get initial mouse position
+  glfwGetCursorPos(window, &lastX, &lastY);
 }
 
 void VulkanBase::initVulkan() {
@@ -476,10 +475,6 @@ void VulkanBase::recreateSwapChain() {
   }
 
   vkDeviceWaitIdle(device);
-  // Update camera viewport
-  if (camera) {
-    camera->SetViewport(0, 0, width, height);
-  }
 
   // Notify derived class about resize
   onResize(width, height);
@@ -879,92 +874,102 @@ void VulkanBase::framebufferResizeCallback(GLFWwindow* window, int width, int he
   app->framebufferResized = true;
 }
 // input events
-
 void VulkanBase::processInput(float deltaTime) {
-  // Keyboard movement
-  float cameraSpeed = 2.5f * deltaTime;  // Adjust speed as needed
+  // Movement keys
+  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camera.moveForward();
+  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.moveBackward();
+  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.moveLeft();
+  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camera.moveRight();
+  if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) camera.moveUp();
+  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camera.moveDown();
 
-  if (inputState.keys[GLFW_KEY_W]) {
-    camera->Move(CameraDirection::FORWARD);
-  }
-  if (inputState.keys[GLFW_KEY_S]) {
-    camera->Move(CameraDirection::BACK);
-  }
-  if (inputState.keys[GLFW_KEY_A]) {
-    camera->Move(CameraDirection::LEFT);
-  }
-  if (inputState.keys[GLFW_KEY_D]) {
-    camera->Move(CameraDirection::RIGHT);
-  }
-  if (inputState.keys[GLFW_KEY_SPACE]) {
-    camera->Move(CameraDirection::UP);
-  }
-  if (inputState.keys[GLFW_KEY_LEFT_SHIFT]) {
-    camera->Move(CameraDirection::DOWN);
-  }
+  // Roll keys
+  if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) camera.roll(-deltaTime);
+  if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) camera.roll(deltaTime);
 
-  // Toggle mouse capture with Tab
-  if (inputState.keys[GLFW_KEY_TAB]) {
-    inputState.mouseCaptured = !inputState.mouseCaptured;
-    glfwSetInputMode(window, GLFW_CURSOR, inputState.mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    inputState.keys[GLFW_KEY_TAB] = false;  // Prevent rapid toggling
-    inputState.firstMouse = true;           // Reset mouse state
-  }
-
-  // Exit on ESC
-  if (inputState.keys[GLFW_KEY_ESCAPE]) {
-    glfwSetWindowShouldClose(window, true);
-  }
+  // Speed modifiers
+  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+    camera.setSpeed(10.0f);  // Fast movement
+  else
+    camera.setSpeed(5.0f);  // Normal movement
 }
-// Input callback implementations
+
+// Static callback implementations
 void VulkanBase::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
 
-  if (key >= 0 && key < GLFW_KEY_LAST) {
-    if (action == GLFW_PRESS) {
-      app->inputState.keys[key] = true;
-    } else if (action == GLFW_RELEASE) {
-      app->inputState.keys[key] = false;
+  if (action == GLFW_PRESS) {
+    switch (key) {
+      case GLFW_KEY_ESCAPE:
+        glfwSetWindowShouldClose(window, true);
+        break;
+
+      case GLFW_KEY_TAB:
+        // Toggle mouse capture
+        app->mouseCaptured = !app->mouseCaptured;
+        if (app->mouseCaptured) {
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          app->firstMouse = true;  // Reset mouse state
+        } else {
+          glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+        break;
+
+      case GLFW_KEY_R:
+        // Reset camera to initial position
+        app->camera.initialize(glm::vec3(3.0f, 3.0f, 3.0f),                              // Z-up position
+                               glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)  // Z-up
+        );
+        break;
     }
   }
+
+  // Call derived class handler
+  app->onKeyEvent(key, scancode, action, mods);
 }
 
 void VulkanBase::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
   auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
 
-  if (!app->inputState.mouseCaptured) return;
-
-  if (app->inputState.firstMouse) {
-    app->inputState.lastX = xpos;
-    app->inputState.lastY = ypos;
-    app->inputState.firstMouse = false;
+  if (!app->mouseCaptured) {
+    app->onMouseMove(xpos, ypos);
+    return;
   }
 
-  double xoffset = app->inputState.lastX - xpos;  // fps style
-  double yoffset = app->inputState.lastY - ypos;  // Reversed: y-coordinates go from bottom to top
+  if (app->firstMouse) {
+    app->lastX = xpos;
+    app->lastY = ypos;
+    app->firstMouse = false;
+    return;
+  }
 
-  app->inputState.lastX = xpos;
-  app->inputState.lastY = ypos;
+  double xoffset = xpos - app->lastX;
+  double yoffset = ypos - app->lastY;
+  app->lastX = xpos;
+  app->lastY = ypos;
 
-  // Use the camera's 2D movement method
-  app->camera->Move2D(static_cast<int>(xpos), static_cast<int>(ypos));
+  // Apply camera rotation
+  app->camera.rotate(static_cast<float>(xoffset), static_cast<float>(yoffset));
+
+  // Call derived class handler
+  app->onMouseMove(xpos, ypos);
+}
+
+void VulkanBase::scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+  auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
+
+  // Adjust camera FOV with scroll
+  float currentFov = app->camera.getFov();
+  currentFov -= static_cast<float>(yoffset) * 2.0f;
+  currentFov = std::clamp(currentFov, 10.0f, 120.0f);
+  app->camera.setFov(currentFov);
 }
 
 void VulkanBase::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
 
-  // Convert GLFW button to simple index (0=left, 1=right, 2=middle)
-  int buttonIndex = button;
-  bool pressed = (action == GLFW_PRESS);
-
-  // Get current cursor position
-  double xpos, ypos;
-  glfwGetCursorPos(window, &xpos, &ypos);
-
-  app->camera->SetMouseButton(buttonIndex, pressed, static_cast<int>(xpos), static_cast<int>(ypos));
-}
-
-void VulkanBase::scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-  auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
-  app->camera->SetScrollWheel(static_cast<float>(yoffset));
+  // Middle mouse button to reset FOV
+  if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS) {
+    app->camera.setFov(45.0f);
+  }
 }

@@ -5,7 +5,6 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -14,13 +13,13 @@
 #include <string>
 #include <vector>
 
-#include "core/camera.hpp"
+#include "BufferManager.hpp"
+#include "CommandBufferUtils.hpp"
+#include "ModelManager.hpp"
+#include "TextureManager.hpp"
+#include "VulkanContext.hpp"
+#include "core/QuaternionCamera.hpp"
 #include "defines.hpp"
-#include "renderer/BufferManager.hpp"
-#include "renderer/CommandBufferUtils.hpp"
-#include "renderer/ModelManager.hpp"
-#include "renderer/TextureManager.hpp"
-#include "renderer/VulkanContext.hpp"
 
 class GLFWwindow;
 
@@ -29,45 +28,7 @@ struct SwapChainSupportDetails {
   std::vector<VkSurfaceFormatKHR> formats;
   std::vector<VkPresentModeKHR> presentModes;
 };
-/*
-struture of this class
-Generic Vulkan Boilerplate
-  Instance (VkInstance)
-  Physical Device (VkPhysicalDevice)
-  Logical Device (VkDevice)
-  Surface (VkSurfaceKHR)
-  Swapchain (VkSwapchainKHR)
-  Swapchain Images (obtained from swapchain)
-  Swapchain Image Views (VkImageView)
-  Render Pass (VkRenderPass)
-  Framebuffers (VkFramebuffer)
-  Command Pool (VkCommandPool)
-  Command Buffers (VkCommandBuffer)
-  Queue (VkQueue)
-  Semaphores (VkSemaphore)
-  Fences (VkFence)
-  Events (VkEvent)
-  Pipeline Layout (VkPipelineLayout) - could be shared
-  Descriptor Set Layout (VkDescriptorSetLayout) - could be shared
-  Descriptor Pool (VkDescriptorPool)
-  Pipeline Cache (VkPipelineCache)
-  Debug Utils Messenger (VkDebugUtilsMessengerEXT)
-  Validation Layers
-  depthBuffer;
-Child-Specific Objects (Per-Model/Per-Material/Per-Draw)
-  Descriptor Sets (VkDescriptorSet)
-  Buffers (VkBuffer)
-  Vertex Buffers
-  Index Buffers
-  Uniform Buffers
-  Storage Buffers
-  Images/Textures (VkImage)
-  Image Views (VkImageView)
-  Buffer Views (VkBufferView)
-  Samplers (VkSampler) - could be shared
-  Pipeline (VkPipeline)
-  Shader Modules (VkShaderModule)
-*/
+
 class TAK_API VulkanBase {
  public:
   virtual ~VulkanBase() = default;
@@ -102,7 +63,7 @@ class TAK_API VulkanBase {
   void createSurface();
   void createSwapChain();
   void createImageViews();
-  void createRenderPass();  // need revise for complex scenes
+  void createRenderPass();
   void createFramebuffers();
   void createCommandPool();
   void createCommandBuffers();
@@ -129,7 +90,7 @@ class TAK_API VulkanBase {
   // Extensions
   std::vector<const char*> getRequiredExtensions();
 
-  // input handling
+  // Input handling
   void processInput(float deltaTime);
 
   // Protected members accessible to derived classes
@@ -162,9 +123,9 @@ class TAK_API VulkanBase {
   VkRenderPass renderPass;
   std::vector<VkFramebuffer> swapChainFramebuffers;
 
-  VkCommandPool commandPool;                    // For main rendering
-  VkCommandPool transientCommandPool;           // For short-lived operations
-  std::vector<VkCommandBuffer> commandBuffers;  // commandbuffers for each frame
+  VkCommandPool commandPool;
+  VkCommandPool transientCommandPool;
+  std::vector<VkCommandBuffer> commandBuffers;
 
   // Synchronization
   std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -178,16 +139,13 @@ class TAK_API VulkanBase {
   TextureManager::Texture depthBuffer;
 
   // Camera system
-  std::unique_ptr<Camera> camera;
+  QuaternionCamera camera;
 
-  // Add input tracking
-  struct InputState {
-    bool keys[349] = {false};  // GLFW_KEY_LAST=349
-    bool firstMouse = true;
-    double lastX = 400.0;
-    double lastY = 300.0;
-    bool mouseCaptured = true;
-  } inputState;
+  // Input state
+  bool firstMouse = true;
+  double lastX = 0.0;
+  double lastY = 0.0;
+  bool mouseCaptured = true;  // Start with mouse captured
 
   // Validation layers
 #ifdef NDEBUG
@@ -211,9 +169,8 @@ class TAK_API VulkanBase {
 
   static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
-  // public?
   static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
   static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
-  static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
   static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+  static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 };
