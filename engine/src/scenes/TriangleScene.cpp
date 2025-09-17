@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <stdexcept>
 
-#include "../core/utils.hpp"
+#include "core/utils.hpp"
 
 TriangleScene::TriangleScene() {
   window_width = 1920;
@@ -296,18 +296,17 @@ void TriangleScene::createUniformBuffers() {
     vkMapMemory(device, uniformBuffers[i].memory, 0, bufferSize, 0, &uniformBuffersMapped[i]);
   }
 }
-
+// +Z = up, +X = right, +Y = forward
 void TriangleScene::updateUniformBuffer(f32 deltatime) {
-  // need to move this to push constant
+  // TODO: need to move this to push constant
   totalTime += deltatime;  // accumlate time
   UniformBufferObject ubo{};
-
   ubo.model = glm::rotate(glm::mat4(1.0f), totalTime * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-  ubo.view = camera.getViewMatrix();
-  float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
-  ubo.proj = camera.getProjectionMatrix(aspectRatio);
-  ubo.proj[1][1] *= -1;  // Vulkan Y-flip
 
+  glm::mat4 proj, view, model;
+  camera->GetMatrices(proj, view, model);
+  ubo.view = view;
+  ubo.proj = proj;
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 }
 

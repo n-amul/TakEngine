@@ -5,6 +5,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -13,13 +14,13 @@
 #include <string>
 #include <vector>
 
-#include "../core/camera.hpp"
-#include "BufferManager.hpp"
-#include "CommandBufferUtils.hpp"
-#include "ModelManager.hpp"
-#include "TextureManager.hpp"
-#include "VulkanContext.hpp"
+#include "core/camera.hpp"
 #include "defines.hpp"
+#include "renderer/BufferManager.hpp"
+#include "renderer/CommandBufferUtils.hpp"
+#include "renderer/ModelManager.hpp"
+#include "renderer/TextureManager.hpp"
+#include "renderer/VulkanContext.hpp"
 
 class GLFWwindow;
 
@@ -177,12 +178,16 @@ class TAK_API VulkanBase {
   TextureManager::Texture depthBuffer;
 
   // Camera system
-  Camera camera;
-  // Input state
-  bool firstMouse = true;
-  double lastX = 0.0;
-  double lastY = 0.0;
-  bool mouseCaptured = true;  // Start with mouse captured
+  std::unique_ptr<Camera> camera;
+
+  // Add input tracking
+  struct InputState {
+    bool keys[349] = {false};  // GLFW_KEY_LAST=349
+    bool firstMouse = true;
+    double lastX = 400.0;
+    double lastY = 300.0;
+    bool mouseCaptured = true;
+  } inputState;
 
   // Validation layers
 #ifdef NDEBUG
@@ -206,8 +211,9 @@ class TAK_API VulkanBase {
 
   static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
+  // public?
   static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
   static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
-  static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
   static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+  static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 };

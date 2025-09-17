@@ -6,10 +6,10 @@
 #include <string>
 #include <unordered_map>
 
-#include "BufferManager.hpp"
-#include "CommandBufferUtils.hpp"
-#include "VulkanContext.hpp"
 #include "defines.hpp"
+#include "renderer/BufferManager.hpp"
+#include "renderer/CommandBufferUtils.hpp"
+#include "renderer/VulkanContext.hpp"
 
 class TextureManager {
  public:

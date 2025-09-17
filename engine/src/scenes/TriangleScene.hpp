@@ -3,7 +3,7 @@
 #include <array>
 #include <vector>
 
-#include "../renderer/VulkanBase.hpp"
+#include "renderer/VulkanBase.hpp"
 
 class TAK_API TriangleScene : public VulkanBase {
  public:
@@ -78,7 +78,7 @@ class TAK_API TriangleScene : public VulkanBase {
   std::vector<void*> uniformBuffersMapped;
 
   TextureManager::Texture rectTexture;
-
+  //+Z = up, +X = right, +Y = forward (blender, maya)
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
   const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
                                         {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
