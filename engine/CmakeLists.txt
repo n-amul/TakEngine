@@ -76,6 +76,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tinygltf)
 
+# ---- simdjson ----
+FetchContent_Declare(
+    simdjson
+    GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+    GIT_TAG        v3.10.1  
+)
+FetchContent_MakeAvailable(simdjson)
+
 # ---- Link everything into engine.dll ----
 target_link_libraries(engine
     PUBLIC
@@ -83,8 +91,8 @@ target_link_libraries(engine
         glm::glm         # header‑only
         glfw             # static .lib
         spdlog::spdlog   # header‑only
-        # stb_image       
         tinygltf            
+        simdjson::simdjson
 )
 
 
@@ -92,4 +100,5 @@ target_link_libraries(engine
 target_compile_definitions(engine PRIVATE
     SHADER_DIR="${CMAKE_SOURCE_DIR}/shaders"
     TEXTURE_DIR="${CMAKE_SOURCE_DIR}/resources/textures"
+    MODEL_DIR="${CMAKE_SOURCE_DIR}/resources/models"
 )

@@ -3,6 +3,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <filesystem>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -38,9 +39,12 @@ ModelManager::Model ModelManager::loadGLTF(const std::string& filename) {
   if (ext == "glb") {
     fileLoaded = gltfContext.LoadBinaryFromFile(&gltfModel, &err, &warn, filename);
   } else {
+    // std::filesystem::path gltfPath(filename);
+    // std::filesystem::current_path(gltfPath.parent_path());
+    // spdlog::info("Set working directory to: {}", std::filesystem::current_path().string());
     fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &err, &warn, filename);
   }
-
+  fileLoaded = false;
   if (!warn.empty()) {
     spdlog::warn("glTF loader warning: {}", warn);
   }

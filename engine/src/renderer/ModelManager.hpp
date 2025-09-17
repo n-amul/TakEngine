@@ -20,7 +20,6 @@
 #include "VulkanContext.hpp"
 #include "defines.hpp"
 
-// Forward declaration
 namespace tinygltf {
 class TinyGLTF;
 class Model;
@@ -32,12 +31,8 @@ class ModelManager {
  public:
   ModelManager(std::shared_ptr<VulkanContext> ctx, std::shared_ptr<BufferManager> bufferMgr, std::shared_ptr<TextureManager> textureMgr,
                std::shared_ptr<CommandBufferUtils> cmdUtil)
-      : context(ctx), bufferManager(bufferMgr), textureManager(textureMgr), cmdUtils(cmdUtil) {
-    // gltfLoader = std::make_unique<tinygltf::TinyGLTF>();
-  }
-  ~ModelManager() {
-    // Cleanup handled by RAII
-  }
+      : context(ctx), bufferManager(bufferMgr), textureManager(textureMgr), cmdUtils(cmdUtil) {}
+  ~ModelManager() {}
   // PBR Vertex structure for glTF models
   struct Vertex {
     glm::vec3 pos;

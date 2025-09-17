@@ -7,6 +7,9 @@
 
 int main() {
   try {
+    // TODO:
+    //  ModelLoadTesting test;
+    //  test.runAllTests();
     TriangleScene app;
     app.run();
   } catch (const std::exception& e) {

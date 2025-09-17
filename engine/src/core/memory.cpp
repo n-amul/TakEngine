@@ -1,4 +1,4 @@
-#include "kmemory.hpp"
+#include "memory.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -14,13 +14,9 @@ static std::array<std::atomic<u32>, MEMORY_TAG_MAX_TAGS> g_allocs;
 #endif
 
 // Tag names for human‑readable logs – keep order in sync with enum.
-static constexpr const char* TAG_NAMES[MEMORY_TAG_MAX_TAGS] = {
-    "Unknown",  "Array",      "LinearAllocator",
-    "DArray",   "Dict",       "RingQueue",
-    "BST",      "String",     "Application",
-    "Job",      "Texture",    "MaterialInstance",
-    "Renderer", "Game",       "Transform",
-    "Entity",   "EntityNode", "Scene"};
+static constexpr const char* TAG_NAMES[MEMORY_TAG_MAX_TAGS] = {"Unknown",  "Array",  "LinearAllocator", "DArray", "Dict",       "RingQueue",
+                                                               "BST",      "String", "Application",     "Job",    "Texture",    "MaterialInstance",
+                                                               "Renderer", "Game",   "Transform",       "Entity", "EntityNode", "Scene"};
 
 // -------------------------------------------------------------------------
 // API implementation
@@ -41,8 +37,7 @@ void memory_shutdown(void) {
   memory_log();
   for (u32 i = 0; i < MEMORY_TAG_MAX_TAGS; ++i) {
     if (g_allocs[i].load() != 0) {
-      SPDLOG_ERROR("[Memory] Leak: {} allocs ({} bytes) {}", g_allocs[i].load(),
-                   g_bytes[i].load(), TAG_NAMES[i]);
+      SPDLOG_ERROR("[Memory] Leak: {} allocs ({} bytes) {}", g_allocs[i].load(), g_bytes[i].load(), TAG_NAMES[i]);
     }
   }
 #endif
