@@ -303,8 +303,8 @@ void TriangleScene::updateUniformBuffer(f32 deltatime) {
   UniformBufferObject ubo{};
   ubo.model = glm::rotate(glm::mat4(1.0f), totalTime * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
-  glm::mat4 proj, view, model;
-  camera->GetMatrices(proj, view, model);
+  glm::mat4 proj, view;
+  camera->GetMatrices(proj, view);
   ubo.view = view;
   ubo.proj = proj;
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));

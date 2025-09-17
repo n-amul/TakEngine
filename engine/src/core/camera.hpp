@@ -1,8 +1,3 @@
-/*
- camera.h
- Vulkan Camera Code - Free Flying Camera
- Z-up coordinate system (Vulkan convention)
- */
 #pragma once
 
 #include <glm/glm.hpp>
@@ -45,11 +40,9 @@ class Camera {
 
   // Getting functions
   void GetViewport(int &loc_x, int &loc_y, int &width, int &height);
-  void GetMatrices(glm::mat4 &P, glm::mat4 &V, glm::mat4 &M);
+  void GetMatrices(glm::mat4 &P, glm::mat4 &V);
   glm::mat4 GetProjectionMatrix() const { return projection; }
   glm::mat4 GetViewMatrix() const { return view; }
-  glm::mat4 GetModelMatrix() const { return model; }
-  glm::mat4 GetMVP() const { return MVP; }
   glm::vec3 GetPosition() const { return camera_position; }
   glm::vec3 GetDirection() const { return camera_direction; }
 
@@ -84,8 +77,6 @@ class Camera {
   // Matrices
   glm::mat4 projection;
   glm::mat4 view;
-  glm::mat4 model;
-  glm::mat4 MVP;
 
   // Helper function to update camera basis vectors
   void UpdateCameraVectors();

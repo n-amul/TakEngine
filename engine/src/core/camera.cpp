@@ -6,7 +6,7 @@
 template class glm::vec<3, float, glm::packed_highp>;
 template class glm::mat<4, 4, float, glm::packed_highp>;
 Camera::Camera() {
-  // Vulkan uses Z-up coordinate system
+  // vulkan Z-up coordinate system
   camera_up = glm::vec3(0, 0, 1);
   camera_position = glm::vec3(0, -5, 2);  // Start back and up a bit
   camera_look_at = glm::vec3(0, 0, 0);
@@ -42,49 +42,31 @@ void Camera::Reset() {
   camera_position_delta = glm::vec3(0, 0, 0);
   UpdateCameraVectors();
 }
-
+// TODO: consider Cache these values and change only pitch and heading is changes
 void Camera::UpdateCameraVectors() {
   // Calculate the front vector from heading and pitch
   // In Z-up system: heading rotates around Z, pitch tilts up/down
-  glm::vec3 front;
-  front.x = cos(glm::radians(camera_heading)) * cos(glm::radians(camera_pitch));
-  front.y = sin(glm::radians(camera_heading)) * cos(glm::radians(camera_pitch));
-  front.z = sin(glm::radians(camera_pitch));
+  float heading_rad = glm::radians(camera_heading);
+  float pitch_rad = glm::radians(camera_pitch);
+  float cos_pitch = cos(pitch_rad);
+  camera_direction = glm::vec3(cos(heading_rad) * cos_pitch, sin(heading_rad) * cos_pitch, sin(pitch_rad));  // no need to normalize
 
-  camera_direction = glm::normalize(front);
-
-  // Calculate right and up vectors
   // Right vector is perpendicular to direction and world up
-  camera_right = glm::normalize(glm::cross(camera_direction, glm::vec3(0, 0, 1)));
-
-  // Recalculate up vector to ensure orthogonality
-  camera_up = glm::normalize(glm::cross(camera_right, camera_direction));
+  camera_right = glm::cross(camera_direction, glm::vec3(0, 0, 1));
+  camera_up = glm::cross(camera_right, camera_direction);
 }
 
 void Camera::Update() {
   // Update camera vectors based on current heading and pitch
   UpdateCameraVectors();
 
-  // Apply position delta with damping
   camera_position += camera_position_delta;
   camera_position_delta *= 0.8f;  // Damping factor
-
   // Update look-at point
   camera_look_at = camera_position + camera_direction;
-
-  // Create view matrix for Z-up coordinate system
   view = glm::lookAt(camera_position, camera_look_at, glm::vec3(0, 0, 1));
-
-  // Create projection matrix
-  // Vulkan clip space has inverted Y and half Z
   projection = glm::perspective(field_of_view, aspect, near_clip, far_clip);
   projection[1][1] *= -1;  // Flip Y for Vulkan
-
-  // Model matrix (identity for now)
-  model = glm::mat4(1.0f);
-
-  // Combined MVP matrix
-  MVP = projection * view * model;
 }
 
 void Camera::Move(CameraDirection dir) {
@@ -204,8 +186,7 @@ void Camera::GetViewport(int &loc_x, int &loc_y, int &width, int &height) {
   height = window_height;
 }
 
-void Camera::GetMatrices(glm::mat4 &P, glm::mat4 &V, glm::mat4 &M) {
+void Camera::GetMatrices(glm::mat4 &P, glm::mat4 &V) {
   P = projection;
   V = view;
-  M = model;
 }
