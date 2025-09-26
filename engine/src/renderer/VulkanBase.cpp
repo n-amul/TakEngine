@@ -216,6 +216,11 @@ void VulkanBase::initVulkan() {
   context->physicalDevice = physicalDevice;
   context->graphicsQueue = graphicsQueue;
   context->presentQueue = presentQueue;
+  vkGetPhysicalDeviceProperties(physicalDevice, &context->properties);
+  vkGetPhysicalDeviceFeatures(physicalDevice, &context->features);
+  context->enabledFeatures = deviceFeatures;
+  context->queueFamilyIndex = queueFamilyIndex;
+
   spdlog::info("Creating commandpool...");
   // 3. Command pools (needed for resource loading)
   createCommandPool();
@@ -227,7 +232,6 @@ void VulkanBase::initVulkan() {
   cmdUtils = std::make_shared<CommandBufferUtils>(context);
   bufferManager = std::make_shared<BufferManager>(context, cmdUtils);
   textureManager = std::make_shared<TextureManager>(context, cmdUtils, bufferManager);
-  modelManager = std::make_shared<ModelManager>(context, bufferManager, textureManager, cmdUtils);
 
   spdlog::info("Creating swapchain & renderpass...");
   // 5. Rendering setup
@@ -355,6 +359,8 @@ void VulkanBase::createLogicalDevice() {
 
   vkGetDeviceQueue(device, queueFamily_index.value(), 0, &graphicsQueue);
   vkGetDeviceQueue(device, queueFamily_index.value(), 0, &presentQueue);
+  this->queueFamilyIndex = queueFamily_index.value();
+  this->deviceFeatures = deviceFeatures;
 }
 
 std::optional<u32> VulkanBase::findQueueFamilies(VkPhysicalDevice device) {
@@ -745,12 +751,8 @@ void VulkanBase::cleanup() {
   vkDeviceWaitIdle(device);
   // Clean up derived class resources FIRST
   cleanupResources();
-  depthBuffer = TextureManager::Texture();
+  textureManager->destroyTexture(depthBuffer);
   cleanupSwapChain();
-  // Destroy shared pointers
-  bufferManager.reset();
-  cmdUtils.reset();
-  context.reset();
   // clean up core
   vkDestroyRenderPass(device, renderPass, nullptr);
 

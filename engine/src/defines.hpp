@@ -84,3 +84,9 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 
 // type cast
 #define CAST_U32(x) static_cast<u32>(x)
+
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_INLINE
+#define GLM_FORCE_XYZW_ONLY

@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            //PDB/source mismatch -> delete build
+            "name": "Run testbed (MSVC)",
+            "type": "cppvsdbg", // Windows debugger
+            "request": "launch",
+            "program": "${workspaceFolder}/build/testbed/Debug/testbed.exe",
+            "cwd": "${workspaceFolder}",
+            "symbolSearchPath": "${workspaceFolder}/build",
+            "stopAtEntry": false
+        }
+    ]
+}

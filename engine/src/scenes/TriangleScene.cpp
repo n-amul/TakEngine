@@ -357,7 +357,7 @@ void TriangleScene::onResize(int width, int height) {
 void TriangleScene::cleanupResources() {
   spdlog::info("Cleaning up triangle resources");
   // clean up texture resources
-  rectTexture = TextureManager::Texture();
+  textureManager->destroyTexture(rectTexture);
 
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -366,12 +366,13 @@ void TriangleScene::cleanupResources() {
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     if (uniformBuffers[i].memory != VK_NULL_HANDLE) {
       vkUnmapMemory(device, uniformBuffers[i].memory);  // uniformBuffersMapped
+      uniformBuffersMapped[i] = nullptr;
     }
+    bufferManager->destroyBuffer(uniformBuffers[i]);
   }
   // Clean up buffers
-  vertexBuffer = BufferManager::Buffer();
-  indexBuffer = BufferManager::Buffer();
-  uniformBuffers.clear();
+  bufferManager->destroyBuffer(vertexBuffer);
+  bufferManager->destroyBuffer(indexBuffer);
 
   // Clean up pipeline
   vkDestroyPipeline(device, graphicsPipeline, nullptr);

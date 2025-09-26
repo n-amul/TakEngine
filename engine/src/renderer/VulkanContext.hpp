@@ -11,4 +11,9 @@ struct VulkanContext {
   VkCommandPool transientCommandPool;
   VkQueue graphicsQueue;
   VkQueue presentQueue;
+
+  VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceFeatures features;
+  VkPhysicalDeviceFeatures enabledFeatures;
+  u32 queueFamilyIndex;  // supports graphics and presentation queue
 };

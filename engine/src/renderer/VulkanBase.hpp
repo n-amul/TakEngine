@@ -2,9 +2,7 @@
 
 #include <spdlog/spdlog.h>
 #include <vulkan/vulkan.h>
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -15,7 +13,6 @@
 
 #include "BufferManager.hpp"
 #include "CommandBufferUtils.hpp"
-#include "ModelManager.hpp"
 #include "TextureManager.hpp"
 #include "VulkanContext.hpp"
 #include "core/QuaternionCamera.hpp"
@@ -105,7 +102,6 @@ class TAK_API VulkanBase {
   std::shared_ptr<CommandBufferUtils> cmdUtils;
   std::shared_ptr<BufferManager> bufferManager;
   std::shared_ptr<TextureManager> textureManager;
-  std::shared_ptr<ModelManager> modelManager;
 
   VkInstance instance;
   VkSurfaceKHR surface;
@@ -113,6 +109,8 @@ class TAK_API VulkanBase {
   VkDevice device;
   VkQueue graphicsQueue;
   VkQueue presentQueue;
+  VkPhysicalDeviceFeatures deviceFeatures;
+  u32 queueFamilyIndex = UINT32_MAX;
 
   VkSwapchainKHR swapChain;
   std::vector<VkImage> swapChainImages;
