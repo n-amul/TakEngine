@@ -176,7 +176,8 @@ void TriangleScene::loadResources() {
   spdlog::info("Loading triangle resources");
   createDescriptorSetLayout();
 
-  createTextures();
+  // createTextures();
+  createModelTextures(std::string(MODEL_DIR) + "/buster_drone/scene.gltf");
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
@@ -260,8 +261,10 @@ void TriangleScene::createDescriptorSets() {
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = rectTexture.imageView;
-    imageInfo.sampler = rectTexture.sampler;
+    imageInfo.imageView = textures[1].imageView;
+    imageInfo.sampler = textures[1].sampler;
+    // imageInfo.imageView = rectTexture.imageView;
+    // imageInfo.sampler = rectTexture.sampler;
 
     std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
@@ -358,6 +361,9 @@ void TriangleScene::cleanupResources() {
   spdlog::info("Cleaning up triangle resources");
   // clean up texture resources
   textureManager->destroyTexture(rectTexture);
+  for (auto& texture : textures) {
+    textureManager->destroyTexture(texture);
+  }
 
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -381,4 +387,74 @@ void TriangleScene::cleanupResources() {
   pipelineLayout = VK_NULL_HANDLE;
 
   spdlog::info("Triangle resources cleaned up");
+}
+
+void TriangleScene::createModelTextures(const std::string& filename) {
+  tinygltf::Model gltfModel;
+  tinygltf::TinyGLTF gltfContext;
+
+  std::string error;
+  std::string warning;
+
+  bool binary = false;
+  size_t extpos = filename.rfind('.', filename.length());
+  if (extpos != std::string::npos) {
+    binary = (filename.substr(extpos + 1, filename.length() - extpos) == "glb");
+  }
+  size_t pos = filename.find_last_of('/');
+  if (pos == std::string::npos) {
+    pos = filename.find_last_of('\\');
+  }
+  auto filepath = filename.substr(0, pos);
+
+  auto loadImageDataFunc = [](tinygltf::Image* image, const int imageIndex, std::string* error, std::string* warning, int req_width, int req_height,
+                              const unsigned char* bytes, int size, void* userData) -> bool {
+    // KTX files will be handled by our own code
+    if (image->uri.find_last_of(".") != std::string::npos) {
+      if (image->uri.substr(image->uri.find_last_of(".") + 1) == "ktx2") {
+        return true;
+      }
+    }
+    return tinygltf::LoadImageData(image, imageIndex, error, warning, req_width, req_height, bytes, size, userData);
+  };
+  gltfContext.SetImageLoader(loadImageDataFunc, nullptr);
+  bool fileLoaded =
+      binary ? gltfContext.LoadBinaryFromFile(&gltfModel, &error, &warning, filename.c_str()) : gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename.c_str());
+  spdlog::info("Meshes: {}, Nodes{}", gltfModel.meshes.size(), gltfModel.nodes.size());
+
+  size_t vertexCount = 0;
+  size_t indexCount = 0;
+
+  if (fileLoaded) {
+    for (auto ext : gltfModel.extensionsUsed) {
+      if (ext == "KHR_texture_basisu") {
+        spdlog::info("Model uses KHR_texture_basisu, initializing basisu transcoder");
+        basist::basisu_transcoder_init();
+      }
+    }
+
+    TextureManager::TextureSampler textureSampler;
+    // default one for now
+    textureSampler.magFilter = VK_FILTER_LINEAR;
+    textureSampler.minFilter = VK_FILTER_LINEAR;
+    textureSampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    textureSampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    textureSampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+    // load texture
+    for (tinygltf::Texture& tex : gltfModel.textures) {
+      int source = tex.source;
+      // If this texture uses the KHR_texture_basisu, we need to get the source index from the extension structure
+      if (tex.extensions.find("KHR_texture_basisu") != tex.extensions.end()) {
+        auto ext = tex.extensions.find("KHR_texture_basisu");
+        auto value = ext->second.Get("source");
+        source = value.Get<int>();
+      }
+
+      tinygltf::Image image = gltfModel.images[source];
+      spdlog::info("Image #{} validated: '{}' ({}), {}x{}, {} components, {} bytes", source, image.name.empty() ? "unnamed" : image.name,
+                   image.uri.empty() ? "embedded" : image.uri, image.width, image.height, image.component, image.image.size());
+      textures.push_back(std::move(textureManager->createTextureFromGLTFImage(image, filepath, textureSampler, context->graphicsQueue)));
+    }
+  }
 }

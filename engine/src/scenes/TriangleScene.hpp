@@ -1,4 +1,6 @@
 #pragma once
+#include <basisu_transcoder.h>
+#include <tiny_gltf.h>
 
 #include <array>
 #include <vector>
@@ -78,6 +80,7 @@ class TAK_API TriangleScene : public VulkanBase {
   std::vector<void*> uniformBuffersMapped;
 
   TextureManager::Texture rectTexture;
+  std::vector<TextureManager::Texture> textures;
   //+Z = up, +X = right, +Y = forward (blender, maya)
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
   const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
@@ -98,4 +101,5 @@ class TAK_API TriangleScene : public VulkanBase {
   void createUniformBuffers();
   void updateUniformBuffer(f32 deltatime);
   void createTextures();
+  void createModelTextures(const std::string& filename);
 };

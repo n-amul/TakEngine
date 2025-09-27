@@ -22,7 +22,7 @@ class TextureManager {
     VkSampler sampler = VK_NULL_HANDLE;
 
     // Image properties
-    VkExtent3D extent = {0, 0, 0};
+    VkExtent3D extent = {0, 0, 1};
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t mipLevels = 1;
     // uint32_t layerCount;
@@ -161,7 +161,7 @@ class TextureManager {
                    uint32_t mipLevels = 1);
   void transitionImageLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer, uint32_t mipLevels = 1);
   void copyBufferToImage(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, VkDeviceSize bufferOffset = 0, uint32_t miplevel = 0,
-                         VkExtent3D extent = {0, 0, 0});
+                         VkExtent3D extent = {0, 0, 1});
 
   Texture createTextureFromGLTFImage(const tinygltf::Image& gltfImage, std::string path, TextureSampler textureSampler, VkQueue copyQueue);
   std::vector<TextureSampler> loadTextureSamplers(tinygltf::Model& gltfModel);

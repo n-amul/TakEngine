@@ -365,7 +365,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     if (gltfImage.pixel_type == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
       format = VK_FORMAT_R16G16B16A16_UNORM;
     }
-    texture.mipLevels = static_cast<uint32_t>(floor(log2(std::max(texture.extent.width, texture.extent.height))) + 1.0);
+    texture.mipLevels = static_cast<uint32_t>(floor(log2(std::max(gltfImage.width, gltfImage.height))) + 1.0);
+    // texture.mipLevels = static_cast<uint32_t>(floor(log2(std::max(texture.extent.width, texture.extent.height))) + 1.0);
 
     // upload image data to staging buffer
     BufferManager::Buffer stagingBuffer =
