@@ -110,7 +110,7 @@ struct Mesh {
   BoundingBox bb;
   BoundingBox aabb;
   glm::mat4 matrix;
-  glm::mat4 jointMatrix[MAX_NUM_JOINTS]{};
+  std::vector<glm::mat4> jointMatrix = std::vector<glm::mat4>(MAX_NUM_JOINTS);  // consider not setting the size here
   uint32_t jointcount{0};
   uint32_t index;
   Mesh(glm::mat4 matrix) { this->matrix = matrix; }  // @todo: create large SSBO instead of many small uniform buffers

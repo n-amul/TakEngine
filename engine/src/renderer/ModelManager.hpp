@@ -53,9 +53,36 @@ class ModelManager {
     std::string filePath;
   };
 
+  // Model management
+  Model createModelFromFile(const std::string& filename, float scale = 1.0f);
+
+  void destroyModel(Model* model);
+
+  // Rendering
+  void drawModel(Model* model, VkCommandBuffer commandBuffer);
+  void drawNode(Model* model, Node* node, VkCommandBuffer commandBuffer);
+
+  // Animation
+  void updateAnimation(Model* model, uint32_t index, float time);
+
+  // Utilities
+  Node* findNode(Model* model, Node* parent, uint32_t index);
+  Node* nodeFromIndex(Model* model, uint32_t index);
+  void calculateBoundingBox(Model* model, Node* node, Node* parent);
+  void getSceneDimensions(Model* model);
+
  private:
+  void loadTextures(Model& model, tinygltf::Model& gltfModel);
+  void loadMaterials(Model& model, tinygltf::Model& gltfModel);
+  void loadNode(Model& model, Node* parent, const tinygltf::Node& node);
+  void loadSkins(Model& model, tinygltf::Model& gltfModel);
+  void loadAnimations(Model* model, tinygltf::Model& gltfModel);
+  void getNodeProps(const tinygltf::Node& node);
+  VkSamplerAddressMode getVkWrapMode(int32_t wrapMode);
+  VkFilter getVkFilterMode(int32_t filterMode);
+
   std::shared_ptr<VulkanContext> context;
   std::shared_ptr<BufferManager> bufferManager;
   std::shared_ptr<TextureManager> textureManager;
   std::shared_ptr<CommandBufferUtils> cmdUtils;
-}
+};
