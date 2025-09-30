@@ -15,6 +15,7 @@
 // Public Methods
 //-----------------------------------------------------------
 void VulkanBase::run() {
+  spdlog::info("VulkanBase::run entered");
   initWindow();
   initVulkan();
   mainLoop();

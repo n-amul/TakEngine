@@ -14,6 +14,22 @@
 
 #define MAX_NUM_JOINTS 128u
 
+struct Vertex {
+  glm::vec3 pos;
+  glm::vec3 normal;
+  glm::vec2 uv0;
+  glm::vec2 uv1;
+  glm::uvec4 joint0;
+  glm::vec4 weight0;
+  glm::vec4 color;
+};
+struct LoaderInfo {
+  std::vector<uint32_t> indexBuffer;
+  std::vector<Vertex> vertexBuffer;
+  size_t indexPos = 0;
+  size_t vertexPos = 0;
+};
+
 struct BoundingBox {
   glm::vec3 min;
   glm::vec3 max;
@@ -57,11 +73,14 @@ struct Material {
   float roughnessFactor = 1.0f;
   glm::vec4 baseColorFactor = glm::vec4(1.0f);
   glm::vec4 emissiveFactor = glm::vec4(0.0f);
-  TextureManager::Texture baseColorTexture;
-  TextureManager::Texture metallicRoughnessTexture;
-  TextureManager::Texture normalTexture;
-  TextureManager::Texture occlusionTexture;
-  TextureManager::Texture emissiveTexture;
+
+  // (UINT32_MAX = no texture)
+  uint32_t baseColorTextureIndex = UINT32_MAX;
+  uint32_t metallicRoughnessTextureIndex = UINT32_MAX;
+  uint32_t normalTextureIndex = UINT32_MAX;
+  uint32_t occlusionTextureIndex = UINT32_MAX;
+  uint32_t emissiveTextureIndex = UINT32_MAX;
+
   bool doubleSided = false;  // cull front: counter clockwise
   struct TexCoordSets {
     uint8_t baseColor = 0;
@@ -73,8 +92,8 @@ struct Material {
   } texCoordSets;
   // alternative PBR workflow
   struct Extension {
-    TextureManager::Texture specularGlossinessTexture;
-    TextureManager::Texture diffuseTexture;
+    uint32_t specularGlossinessTextureIndex = UINT32_MAX;
+    uint32_t diffuseTextureIndex = UINT32_MAX;
     glm::vec4 diffuseFactor = glm::vec4(1.0f);
     glm::vec3 specularFactor = glm::vec3(0.0f);
   } extension;
@@ -83,7 +102,7 @@ struct Material {
     bool specularGlossiness = false;
   } pbrWorkflows;
   VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-  int index = 0;
+  uint32_t materialIndex = 0;
   bool unlit = false;
   float emissiveStrength = 1.0f;
 };

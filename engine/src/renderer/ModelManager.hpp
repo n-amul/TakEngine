@@ -14,16 +14,6 @@ class ModelManager {
 
   //  Complete model
   struct Model {
-    struct Vertex {
-      glm::vec3 pos;
-      glm::vec3 normal;
-      glm::vec2 uv0;
-      glm::vec2 uv1;
-      glm::uvec4 joint0;
-      glm::vec4 weight0;
-      glm::vec4 color;
-    };
-
     BufferManager::Buffer vertices;
     BufferManager::Buffer indices;
     glm::mat4 aabb;
@@ -42,13 +32,6 @@ class ModelManager {
       glm::vec3 min = glm::vec3(FLT_MAX);
       glm::vec3 max = glm::vec3(-FLT_MAX);
     } dimensions;
-
-    struct LoaderInfo {
-      uint32_t* indexBuffer;
-      Vertex* vertexBuffer;
-      size_t indexPos = 0;
-      size_t vertexPos = 0;
-    };
 
     std::string filePath;
   };
@@ -74,10 +57,10 @@ class ModelManager {
  private:
   void loadTextures(Model& model, tinygltf::Model& gltfModel);
   void loadMaterials(Model& model, tinygltf::Model& gltfModel);
-  void loadNode(Model& model, Node* parent, const tinygltf::Node& node);
+  void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, LoaderInfo& loaderInfo, float globalscale);
   void loadSkins(Model& model, tinygltf::Model& gltfModel);
   void loadAnimations(Model* model, tinygltf::Model& gltfModel);
-  void getNodeProps(const tinygltf::Node& node);
+  void getNodeVertexCounts(const tinygltf::Node& node, const tinygltf::Model& model, size_t& vertexCount, size_t& indexCount);
   VkSamplerAddressMode getVkWrapMode(int32_t wrapMode);
   VkFilter getVkFilterMode(int32_t filterMode);
 

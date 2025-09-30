@@ -171,7 +171,6 @@ void TriangleScene::createPipeline() {
 
   spdlog::info("Triangle pipeline created successfully");
 }
-// TODO test texture manager
 void TriangleScene::loadResources() {
   spdlog::info("Loading triangle resources");
   createDescriptorSetLayout();

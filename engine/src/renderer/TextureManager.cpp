@@ -337,7 +337,6 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     cmdUtils->endSingleTimeCommands(copyCmd);
     stagingBuffer = BufferManager::Buffer();
-    // Create imageview and sampler?
   } else {  // Image is a basic glTF format like png or jpg and can be loaded directly via tinyglTF
     std::vector<unsigned char> buffer;
     VkDeviceSize bufferSize = 0;

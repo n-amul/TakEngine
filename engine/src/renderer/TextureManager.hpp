@@ -165,6 +165,7 @@ class TextureManager {
 
   Texture createTextureFromGLTFImage(const tinygltf::Image& gltfImage, std::string path, TextureSampler textureSampler, VkQueue copyQueue);
   std::vector<TextureSampler> loadTextureSamplers(tinygltf::Model& gltfModel);
+  // std::vector<Texture> loadTextures(tinygltf::Model& gltfModel, std::vector<TextureSampler>& samplers);
 
   void destroyTexture(Texture& texture);
 };
