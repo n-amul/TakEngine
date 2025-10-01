@@ -46,6 +46,7 @@ class TAK_API VulkanBase {
 
   virtual void initWindow();
   virtual void initVulkan();
+  virtual void initContext();  // testing purpose
 
   // Helper functions accessible to derived classes
   VkShaderModule createShaderModule(const std::vector<char>& code);

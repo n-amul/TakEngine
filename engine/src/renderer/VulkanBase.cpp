@@ -976,3 +976,42 @@ void VulkanBase::mouseButtonCallback(GLFWwindow* window, int button, int action,
     app->camera.setFov(45.0f);
   }
 }
+
+// testing purpose
+void VulkanBase::initContext() {
+  // 1. Core Vulkan setup
+  spdlog::info("Creating instance...");
+  createInstance();
+  spdlog::info("Setting up debug messenger...");
+  setupDebugMessenger();
+  spdlog::info("Creating surface...");
+  createSurface();
+  spdlog::info("Picking physical device...");
+  pickPhysicalDevice();
+  spdlog::info("Creating logical device...");
+  createLogicalDevice();
+  spdlog::info("Creating context...");
+  // 2. Context initialization
+  context = std::make_shared<VulkanContext>();
+  context->instance = instance;
+  context->device = device;
+  context->physicalDevice = physicalDevice;
+  context->graphicsQueue = graphicsQueue;
+  context->presentQueue = presentQueue;
+  vkGetPhysicalDeviceProperties(physicalDevice, &context->properties);
+  vkGetPhysicalDeviceFeatures(physicalDevice, &context->features);
+  context->enabledFeatures = deviceFeatures;
+  context->queueFamilyIndex = queueFamilyIndex;
+
+  spdlog::info("Creating commandpool...");
+  // 3. Command pools (needed for resource loading)
+  createCommandPool();
+  context->commandPool = commandPool;
+  context->transientCommandPool = transientCommandPool;
+
+  spdlog::info("Creating utils...");
+  // 4. Initialize shared utilities
+  cmdUtils = std::make_shared<CommandBufferUtils>(context);
+  bufferManager = std::make_shared<BufferManager>(context, cmdUtils);
+  textureManager = std::make_shared<TextureManager>(context, cmdUtils, bufferManager);
+}

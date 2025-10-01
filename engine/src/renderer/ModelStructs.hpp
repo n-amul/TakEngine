@@ -110,7 +110,7 @@ struct Material {
 struct Primitive {
   uint32_t firstIndex;
   uint32_t indexCount;
-  uint32_t vertexCount;  // no first vertex?
+  uint32_t vertexCount;
   Material& material;
   bool hasIndices;
   BoundingBox bb;
@@ -132,7 +132,7 @@ struct Mesh {
   std::vector<glm::mat4> jointMatrix = std::vector<glm::mat4>(MAX_NUM_JOINTS);  // consider not setting the size here
   uint32_t jointcount{0};
   uint32_t index;
-  Mesh(glm::mat4 matrix) { this->matrix = matrix; }  // @todo: create large SSBO instead of many small uniform buffers
+  Mesh(glm::mat4 matrix) { this->matrix = matrix; }
   ~Mesh() {
     for (Primitive* p : primitives) delete p;
   }
@@ -172,7 +172,14 @@ struct Node {
   glm::mat4 localMatrix();
   glm::mat4 getMatrix();
   void update();
-  ~Node() = default;
+  ~Node() {
+    if (mesh) {
+      delete mesh;
+    }
+    for (auto& child : children) {
+      delete child;
+    }
+  }
 };
 
 struct AnimationChannel {
