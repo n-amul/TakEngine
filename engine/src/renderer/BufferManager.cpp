@@ -3,6 +3,8 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "BufferManager.hpp"
+
 BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties) {
   Buffer buffer(context->device);  // Initialize with device handle
   buffer.size = size;
@@ -39,22 +41,16 @@ BufferManager::Buffer BufferManager::createGPULocalBuffer(const void* data, VkDe
   if (!data || size == 0) {
     throw std::runtime_error("Invalid data or size for GPU buffer creation");
   }
-
   // Create staging buffer
   Buffer stagingBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
   // Copy data to staging buffer
   updateBuffer(stagingBuffer, data, size, 0);
-
   // Create device local buffer with the specified usage
   Buffer deviceBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
   // Copy from staging to device
   copyBuffer(stagingBuffer.buffer, deviceBuffer.buffer, size);
-
   // Clean up staging buffer
   destroyBuffer(stagingBuffer);
-
   return deviceBuffer;
 }
 
@@ -92,4 +88,8 @@ void BufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
   cmdUtils->endSingleTimeCommands(commandBuffer);
   // A fence would allow to schedule multiple transfers simultaneously and wait for all of them complete, instead of
   // executing one at a time. That may give the driver more opportunities to optimize.
+}
+
+BufferManager::Buffer BufferManager::createStagingBuffer(VkDeviceSize size) {
+  return createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 }

@@ -54,11 +54,10 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   // load texture,sampler, and materials
   loadTextures(model, gltfModel);
   loadMaterials(model, gltfModel);
-
+  // load node
   LoaderInfo loaderInfo{};
   size_t vertexCount = 0;
   size_t indexCount = 0;
-
   const tinygltf::Scene &scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
   // Get vertex and index buffer sizes up-front
   for (size_t i = 0; i < scene.nodes.size(); i++) {
@@ -74,6 +73,35 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   }
   spdlog::info("# of nodes: {}", model.nodes.size());
   spdlog::info("# of linear nodes: {}", model.linearNodes.size());
+
+  // animation
+  if (gltfModel.animations.size() > 0) {
+    loadAnimations(model, gltfModel);
+  }
+  loadSkins(model, gltfModel);
+  spdlog::info("# of animation: {}", model.animations.size());
+  spdlog::info("# of skins: {}", model.skins.size());
+  uint32_t meshIndex = 0;
+  for (auto node : model.linearNodes) {
+    // Assign skins
+    if (node->skinIndex > -1) {
+      node->skin = model.skins[node->skinIndex];
+    }
+    // Initial pose
+    if (node->mesh) {
+      node->mesh->index = meshIndex++;
+      node->update();
+    }
+  }
+  // fill vertex buffer
+  size_t vertexBufferSize = vertexCount * sizeof(Vertex);
+  size_t indexBufferSize = indexCount * sizeof(uint32_t);
+  assert(vertexBufferSize > 0);
+  // gpu local buffer (TODO: make this batch to use one command buffer)
+  model.vertices = bufferManager->createGPULocalBuffer(loaderInfo.vertexBuffer.data(), vertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  model.indices = bufferManager->createGPULocalBuffer(loaderInfo.indexBuffer.data(), indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+  getSceneDimensions(model);
 
   return model;
 }
@@ -222,6 +250,118 @@ void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
   spdlog::info("Loaded {} materials", model.materials.size());
 }
 
+void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
+  for (tinygltf::Animation &anim : gltfModel.animations) {
+    Animation animation{};
+    animation.name = anim.name;
+    if (anim.name.empty()) {
+      animation.name = std::to_string(model.animations.size());
+    }
+    // Samplers
+    for (auto &samp : anim.samplers) {
+      AnimationSampler sampler{};
+
+      if (samp.interpolation == "LINEAR") {
+        sampler.interpolation = AnimationSampler::InterpolationType::LINEAR;
+      } else if (samp.interpolation == "STEP") {
+        sampler.interpolation = AnimationSampler::InterpolationType::STEP;
+      } else if (samp.interpolation == "CUBICSPLINE") {
+        sampler.interpolation = AnimationSampler::InterpolationType::CUBICSPLINE;
+      }
+      // Read sampler input time values
+      {
+        const tinygltf::Accessor &accessor = gltfModel.accessors[samp.input];
+        const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+
+        assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+        const void *dataPtr = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
+        const float *buf = static_cast<const float *>(dataPtr);
+        for (size_t index = 0; index < accessor.count; index++) {
+          sampler.inputs.push_back(buf[index]);
+        }
+        for (auto input : sampler.inputs) {
+          if (input < animation.start) {
+            animation.start = input;
+          };
+          if (input > animation.end) {
+            animation.end = input;
+          }
+        }
+      }
+      // Read sampler output T/R/S values
+      {
+        const tinygltf::Accessor &accessor = gltfModel.accessors[samp.output];
+        const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+
+        assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+        const void *dataPtr = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
+
+        switch (accessor.type) {
+          case TINYGLTF_TYPE_VEC3: {
+            const glm::vec3 *buf = static_cast<const glm::vec3 *>(dataPtr);
+            for (size_t index = 0; index < accessor.count; index++) {
+              sampler.outputsVec4.push_back(glm::vec4(buf[index], 0.0f));
+              sampler.outputs.push_back(buf[index][0]);
+              sampler.outputs.push_back(buf[index][1]);
+              sampler.outputs.push_back(buf[index][2]);
+            }
+            break;
+          }
+          case TINYGLTF_TYPE_VEC4: {
+            const glm::vec4 *buf = static_cast<const glm::vec4 *>(dataPtr);
+            for (size_t index = 0; index < accessor.count; index++) {
+              sampler.outputsVec4.push_back(buf[index]);
+              sampler.outputs.push_back(buf[index][0]);
+              sampler.outputs.push_back(buf[index][1]);
+              sampler.outputs.push_back(buf[index][2]);
+              sampler.outputs.push_back(buf[index][3]);
+            }
+            break;
+          }
+          default: {
+            spdlog::info("unknown type");
+            break;
+          }
+        }
+      }
+
+      animation.samplers.push_back(sampler);
+    }
+
+    // Channels
+    for (auto &source : anim.channels) {
+      AnimationChannel channel{};
+
+      if (source.target_path == "rotation") {
+        channel.path = AnimationChannel::PathType::ROTATION;
+      }
+      if (source.target_path == "translation") {
+        channel.path = AnimationChannel::PathType::TRANSLATION;
+      }
+      if (source.target_path == "scale") {
+        channel.path = AnimationChannel::PathType::SCALE;
+      }
+      if (source.target_path == "weights") {
+        spdlog::info("weights not yet supported, skipping channel");
+        continue;
+      }
+      channel.samplerIndex = source.sampler;
+      channel.node = nodeFromIndex(source.target_node, model);
+      if (!channel.node) {
+        continue;
+      }
+
+      animation.channels.push_back(channel);
+    }
+
+    model.animations.push_back(animation);
+  }
+}
+
 void ModelManager::getNodeVertexCounts(const tinygltf::Node &node, const tinygltf::Model &model, size_t &vertexCount, size_t &indexCount) {
   if (node.children.size() > 0) {
     for (size_t i = 0; i < node.children.size(); i++) {
@@ -237,6 +377,84 @@ void ModelManager::getNodeVertexCounts(const tinygltf::Node &node, const tinyglt
         indexCount += model.accessors[primitive.indices].count;
       }
     }
+  }
+}
+
+Node *ModelManager::findNode(Node *parent, uint32_t index) {
+  Node *nodeFound = nullptr;
+  if (parent->index == index) {
+    return parent;
+  }
+  for (auto &child : parent->children) {
+    nodeFound = findNode(child, index);
+    if (nodeFound) {
+      break;
+    }
+  }
+  return nodeFound;
+}
+
+Node *ModelManager::nodeFromIndex(uint32_t index, const Model &model) {
+  Node *nodeFound = nullptr;
+  for (auto &node : model.nodes) {
+    nodeFound = findNode(node, index);
+    if (nodeFound) {
+      break;
+    }
+  }
+  return nodeFound;
+}
+
+void ModelManager::getSceneDimensions(Model &model) {
+  // Calculate binary volume hierarchy for all nodes in the scene
+  for (auto node : model.linearNodes) {
+    calculateBoundingBox(node, nullptr, model);
+  }
+
+  model.dimensions.min = glm::vec3(FLT_MAX);
+  model.dimensions.max = glm::vec3(-FLT_MAX);
+
+  for (auto node : model.linearNodes) {
+    if (node->bvh.valid) {
+      model.dimensions.min = glm::min(model.dimensions.min, node->bvh.min);
+      model.dimensions.max = glm::max(model.dimensions.max, node->bvh.max);
+    }
+  }
+
+  // Calculate scene aabb
+  model.aabb = glm::scale(glm::mat4(1.0f), glm::vec3(model.dimensions.max[0] - model.dimensions.min[0], model.dimensions.max[1] - model.dimensions.min[1],
+                                                     model.dimensions.max[2] - model.dimensions.min[2]));
+  model.aabb[3][0] = model.dimensions.min[0];
+  model.aabb[3][1] = model.dimensions.min[1];
+  model.aabb[3][2] = model.dimensions.min[2];
+
+  glm::vec3 size = model.dimensions.max - model.dimensions.min;
+  glm::vec3 center = (model.dimensions.min + model.dimensions.max) * 0.5f;
+
+  spdlog::info("Scene bounds: min=({:.2f}, {:.2f}, {:.2f}), max=({:.2f}, {:.2f}, {:.2f})", model.dimensions.min.x, model.dimensions.min.y, model.dimensions.min.z,
+               model.dimensions.max.x, model.dimensions.max.y, model.dimensions.max.z);
+  spdlog::info("Scene size: {:.2f} x {:.2f} x {:.2f}, center: ({:.2f}, {:.2f}, {:.2f})", size.x, size.y, size.z, center.x, center.y, center.z);
+}
+
+void ModelManager::calculateBoundingBox(Node *node, Node *parent, Model &model) {
+  BoundingBox parentBvh = parent ? parent->bvh : BoundingBox(model.dimensions.min, model.dimensions.max);
+
+  if (node->mesh) {
+    if (node->mesh->bb.valid) {
+      node->aabb = node->mesh->bb.getAABB(node->getMatrix());
+      if (node->children.size() == 0) {
+        node->bvh.min = node->aabb.min;
+        node->bvh.max = node->aabb.max;
+        node->bvh.valid = true;
+      }
+    }
+  }
+
+  parentBvh.min = glm::min(parentBvh.min, node->bvh.min);
+  parentBvh.max = glm::min(parentBvh.max, node->bvh.max);
+
+  for (auto &child : node->children) {
+    calculateBoundingBox(child, node, model);
   }
 }
 
@@ -465,6 +683,44 @@ void ModelManager::loadNode(Node *parent, const tinygltf::Node &node, uint32_t n
     model.nodes.push_back(newNode);
   }
   model.linearNodes.push_back(newNode);
+}
+
+void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
+  for (tinygltf::Skin &source : gltfModel.skins) {
+    Skin *newSkin = new Skin{};
+    newSkin->name = source.name;
+
+    // Find skeleton root node
+    if (source.skeleton > -1) {
+      newSkin->skeletonRoot = nodeFromIndex(source.skeleton, model);
+    }
+
+    // Find joint nodes
+    for (int jointIndex : source.joints) {
+      Node *node = nodeFromIndex(jointIndex, model);
+      if (node) {
+        newSkin->joints.push_back(nodeFromIndex(jointIndex, model));
+      }
+    }
+
+    // Get inverse bind matrices from buffer
+    if (source.inverseBindMatrices > -1) {
+      const tinygltf::Accessor &accessor = gltfModel.accessors[source.inverseBindMatrices];
+      const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
+      const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+      newSkin->inverseBindMatrices.resize(accessor.count);
+      memcpy(newSkin->inverseBindMatrices.data(), &buffer.data[accessor.byteOffset + bufferView.byteOffset], accessor.count * sizeof(glm::mat4));
+    }
+
+    if (newSkin->joints.size() > MAX_NUM_JOINTS) {
+      spdlog::warn(
+          "Skin {} has {} joints, which is higher than the supported maximum of {}. "
+          "glTF scene may display wrong/incomplete",
+          newSkin->name, newSkin->joints.size(), MAX_NUM_JOINTS);
+    }
+
+    model.skins.push_back(newSkin);
+  }
 }
 
 void ModelManager::destroyModel(Model &model) {

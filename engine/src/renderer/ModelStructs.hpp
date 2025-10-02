@@ -169,9 +169,52 @@ struct Node {
   bool useCachedMatrix{false};
   glm::mat4 cachedLocalMatrix{glm::mat4(1.0f)};
   glm::mat4 cachedMatrix{glm::mat4(1.0f)};
-  glm::mat4 localMatrix();
-  glm::mat4 getMatrix();
-  void update();
+  glm::mat4 localMatrix() {
+    if (!useCachedMatrix) {
+      cachedLocalMatrix = glm::translate(glm::mat4(1.0f), translation) * glm::mat4(rotation) * glm::scale(glm::mat4(1.0f), scale) * matrix;
+    };
+    return cachedLocalMatrix;
+  }
+  glm::mat4 getMatrix() {
+    // Use a simple caching algorithm to avoid having to recalculate matrices to often while traversing the node hierarchy
+    if (!useCachedMatrix) {
+      glm::mat4 m = localMatrix();
+      Node* p = parent;
+      while (p) {
+        m = p->localMatrix() * m;
+        p = p->parent;
+      }
+      cachedMatrix = m;
+      useCachedMatrix = true;
+      return m;
+    } else {
+      return cachedMatrix;
+    }
+  }
+  void update() {
+    useCachedMatrix = false;
+    if (mesh) {
+      glm::mat4 m = getMatrix();
+      if (skin) {
+        mesh->matrix = m;
+        // Update join matrices
+        glm::mat4 inverseTransform = glm::inverse(m);
+        size_t numJoints = std::min((uint32_t)skin->joints.size(), MAX_NUM_JOINTS);
+        for (size_t i = 0; i < numJoints; i++) {
+          Node* jointNode = skin->joints[i];
+          glm::mat4 jointMat = jointNode->getMatrix() * skin->inverseBindMatrices[i];
+          jointMat = inverseTransform * jointMat;
+          mesh->jointMatrix[i] = jointMat;
+        }
+        mesh->jointcount = static_cast<uint32_t>(numJoints);
+      } else {
+        mesh->matrix = m;
+      }
+    }
+    for (auto& child : children) {
+      child->update();
+    }
+  }
   ~Node() {
     if (mesh) {
       delete mesh;

@@ -193,8 +193,7 @@ TextureManager::Texture TextureManager::createTextureFromFile(const std::string&
   VkDeviceSize imageSize = texWidth * texHeight * 4;
 
   // Create staging buffer
-  BufferManager::Buffer stagingBuffer =
-      bufferManager->createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(imageSize);
 
   bufferManager->updateBuffer(stagingBuffer, pixels, imageSize, 0);
   stbi_image_free(pixels);
@@ -287,8 +286,7 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
       totalBufferSize += numBlocksOrPixels * bytesPerBlockOrPixel;
     }
     // Create staging buffer using BufferManager
-    BufferManager::Buffer stagingBuffer =
-        bufferManager->createBuffer(totalBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(totalBufferSize);
 
     // Map the staging buffer memory
     void* data;
@@ -368,8 +366,7 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     // texture.mipLevels = static_cast<uint32_t>(floor(log2(std::max(texture.extent.width, texture.extent.height))) + 1.0);
 
     // upload image data to staging buffer
-    BufferManager::Buffer stagingBuffer =
-        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(bufferSize);
     void* data;
     vkMapMemory(context->device, stagingBuffer.memory, 0, bufferSize, 0, &data);
     memcpy(data, buffer.data(), bufferSize);

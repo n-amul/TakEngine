@@ -53,10 +53,12 @@ class ModelManager {
   void loadMaterials(Model& model, tinygltf::Model& gltfModel);
   void loadNode(Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, Model& model, const tinygltf::Model& gltfModel, LoaderInfo& loaderInfo, float globalscale);
   void loadSkins(Model& model, tinygltf::Model& gltfModel);
-  void loadAnimations(Model* model, tinygltf::Model& gltfModel);
+  void loadAnimations(Model& model, tinygltf::Model& gltfModel);
   void getNodeVertexCounts(const tinygltf::Node& node, const tinygltf::Model& model, size_t& vertexCount, size_t& indexCount);
-  VkSamplerAddressMode getVkWrapMode(int32_t wrapMode);
-  VkFilter getVkFilterMode(int32_t filterMode);
+  Node* findNode(Node* parent, uint32_t index);
+  Node* nodeFromIndex(uint32_t index, const Model& model);
+  void getSceneDimensions(Model& model);
+  void calculateBoundingBox(Node* node, Node* parent, Model& model);
 
   std::shared_ptr<VulkanContext> context;
   std::shared_ptr<BufferManager> bufferManager;
