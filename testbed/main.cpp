@@ -3,15 +3,17 @@
 #include <cstdlib>
 #include <exception>
 
+#include "scenes/ModelScene.hpp"
 #include "scenes/TriangleScene.hpp"
 #include "testing/ModelTest.hpp"
 
 int main() {
   try {
     spdlog::info("Main function started");
-
-    ModelTest modelTest;
-    modelTest.run();  // This calls initWindow(), initVulkan(), mainLoop(), cleanup()
+    // TriangleScene tex;
+    // tex.run();
+    ModelScene modelScene;
+    modelScene.run();
 
     spdlog::info("Main function ending normally");
     return 0;

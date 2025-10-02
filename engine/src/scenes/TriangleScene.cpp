@@ -175,8 +175,8 @@ void TriangleScene::loadResources() {
   spdlog::info("Loading triangle resources");
   createDescriptorSetLayout();
 
-  // createTextures();
-  createModelTextures(std::string(MODEL_DIR) + "/buster_drone/scene.gltf");
+  createTextures();
+  // createModelTextures(std::string(MODEL_DIR) + "/buster_drone/scene.gltf");
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
@@ -260,11 +260,13 @@ void TriangleScene::createDescriptorSets() {
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = textures[1].imageView;
-    imageInfo.sampler = textures[1].sampler;
-    // imageInfo.imageView = rectTexture.imageView;
-    // imageInfo.sampler = rectTexture.sampler;
-
+    if (textures.size()) {
+      imageInfo.imageView = textures[1].imageView;
+      imageInfo.sampler = textures[1].sampler;
+    } else {
+      imageInfo.imageView = rectTexture.imageView;
+      imageInfo.sampler = rectTexture.sampler;
+    }
     std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
     descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

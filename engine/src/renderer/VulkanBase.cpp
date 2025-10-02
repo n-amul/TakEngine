@@ -233,6 +233,7 @@ void VulkanBase::initVulkan() {
   cmdUtils = std::make_shared<CommandBufferUtils>(context);
   bufferManager = std::make_shared<BufferManager>(context, cmdUtils);
   textureManager = std::make_shared<TextureManager>(context, cmdUtils, bufferManager);
+  modelManager = std::make_shared<ModelManager>(context, bufferManager, textureManager, cmdUtils);
 
   spdlog::info("Creating swapchain & renderpass...");
   // 5. Rendering setup

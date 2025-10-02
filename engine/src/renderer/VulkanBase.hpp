@@ -13,6 +13,7 @@
 
 #include "BufferManager.hpp"
 #include "CommandBufferUtils.hpp"
+#include "ModelManager.hpp"
 #include "TextureManager.hpp"
 #include "VulkanContext.hpp"
 #include "core/QuaternionCamera.hpp"
@@ -103,6 +104,7 @@ class TAK_API VulkanBase {
   std::shared_ptr<CommandBufferUtils> cmdUtils;
   std::shared_ptr<BufferManager> bufferManager;
   std::shared_ptr<TextureManager> textureManager;
+  std::shared_ptr<ModelManager> modelManager;
 
   VkInstance instance;
   VkSurfaceKHR surface;

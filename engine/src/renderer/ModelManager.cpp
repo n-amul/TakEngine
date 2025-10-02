@@ -55,7 +55,7 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   loadTextures(model, gltfModel);
   loadMaterials(model, gltfModel);
   // load node
-  LoaderInfo loaderInfo{};
+  tak::LoaderInfo loaderInfo{};
   size_t vertexCount = 0;
   size_t indexCount = 0;
   const tinygltf::Scene &scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
@@ -94,7 +94,7 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
     }
   }
   // fill vertex buffer
-  size_t vertexBufferSize = vertexCount * sizeof(Vertex);
+  size_t vertexBufferSize = vertexCount * sizeof(tak::Vertex);
   size_t indexBufferSize = indexCount * sizeof(uint32_t);
   assert(vertexBufferSize > 0);
   // gpu local buffer (TODO: make this batch to use one command buffer)
@@ -134,15 +134,15 @@ void ModelManager::loadTextures(Model &model, tinygltf::Model &gltfModel) {
 void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
   // Create materials from glTF model
   for (tinygltf::Material &mat : gltfModel.materials) {
-    Material material{};
+    tak::Material material{};
     material.doubleSided = mat.doubleSided;
     if (mat.alphaMode == "OPAQUE") {
-      material.alphaMode = Material::ALPHAMODE_OPAQUE;
+      material.alphaMode = tak::Material::ALPHAMODE_OPAQUE;
     } else if (mat.alphaMode == "MASK") {
-      material.alphaMode = Material::ALPHAMODE_MASK;
+      material.alphaMode = tak::Material::ALPHAMODE_MASK;
       material.alphaCutoff = 0.5f;
     } else if (mat.alphaMode == "BLEND") {
-      material.alphaMode = Material::ALPHAMODE_BLEND;
+      material.alphaMode = tak::Material::ALPHAMODE_BLEND;
     }
     // PBR Metallic Roughness workflow (default)
     if (mat.values.find("baseColorFactor") != mat.values.end()) {
@@ -238,7 +238,7 @@ void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
 
   // Create a default material if no materials are defined
   if (model.materials.empty()) {
-    Material defaultMaterial{};
+    tak::Material defaultMaterial{};
     defaultMaterial.metallicFactor = 0.0f;
     defaultMaterial.roughnessFactor = 1.0f;
     defaultMaterial.baseColorFactor = glm::vec4(1.0f);
@@ -252,21 +252,21 @@ void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
 
 void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
   for (tinygltf::Animation &anim : gltfModel.animations) {
-    Animation animation{};
+    tak::Animation animation{};
     animation.name = anim.name;
     if (anim.name.empty()) {
       animation.name = std::to_string(model.animations.size());
     }
     // Samplers
     for (auto &samp : anim.samplers) {
-      AnimationSampler sampler{};
+      tak::AnimationSampler sampler{};
 
       if (samp.interpolation == "LINEAR") {
-        sampler.interpolation = AnimationSampler::InterpolationType::LINEAR;
+        sampler.interpolation = tak::AnimationSampler::InterpolationType::LINEAR;
       } else if (samp.interpolation == "STEP") {
-        sampler.interpolation = AnimationSampler::InterpolationType::STEP;
+        sampler.interpolation = tak::AnimationSampler::InterpolationType::STEP;
       } else if (samp.interpolation == "CUBICSPLINE") {
-        sampler.interpolation = AnimationSampler::InterpolationType::CUBICSPLINE;
+        sampler.interpolation = tak::AnimationSampler::InterpolationType::CUBICSPLINE;
       }
       // Read sampler input time values
       {
@@ -334,16 +334,16 @@ void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
 
     // Channels
     for (auto &source : anim.channels) {
-      AnimationChannel channel{};
+      tak::AnimationChannel channel{};
 
       if (source.target_path == "rotation") {
-        channel.path = AnimationChannel::PathType::ROTATION;
+        channel.path = tak::AnimationChannel::PathType::ROTATION;
       }
       if (source.target_path == "translation") {
-        channel.path = AnimationChannel::PathType::TRANSLATION;
+        channel.path = tak::AnimationChannel::PathType::TRANSLATION;
       }
       if (source.target_path == "scale") {
-        channel.path = AnimationChannel::PathType::SCALE;
+        channel.path = tak::AnimationChannel::PathType::SCALE;
       }
       if (source.target_path == "weights") {
         spdlog::info("weights not yet supported, skipping channel");
@@ -380,8 +380,8 @@ void ModelManager::getNodeVertexCounts(const tinygltf::Node &node, const tinyglt
   }
 }
 
-Node *ModelManager::findNode(Node *parent, uint32_t index) {
-  Node *nodeFound = nullptr;
+tak::Node *ModelManager::findNode(tak::Node *parent, uint32_t index) {
+  tak::Node *nodeFound = nullptr;
   if (parent->index == index) {
     return parent;
   }
@@ -394,8 +394,8 @@ Node *ModelManager::findNode(Node *parent, uint32_t index) {
   return nodeFound;
 }
 
-Node *ModelManager::nodeFromIndex(uint32_t index, const Model &model) {
-  Node *nodeFound = nullptr;
+tak::Node *ModelManager::nodeFromIndex(uint32_t index, const Model &model) {
+  tak::Node *nodeFound = nullptr;
   for (auto &node : model.nodes) {
     nodeFound = findNode(node, index);
     if (nodeFound) {
@@ -436,8 +436,8 @@ void ModelManager::getSceneDimensions(Model &model) {
   spdlog::info("Scene size: {:.2f} x {:.2f} x {:.2f}, center: ({:.2f}, {:.2f}, {:.2f})", size.x, size.y, size.z, center.x, center.y, center.z);
 }
 
-void ModelManager::calculateBoundingBox(Node *node, Node *parent, Model &model) {
-  BoundingBox parentBvh = parent ? parent->bvh : BoundingBox(model.dimensions.min, model.dimensions.max);
+void ModelManager::calculateBoundingBox(tak::Node *node, tak::Node *parent, Model &model) {
+  tak::BoundingBox parentBvh = parent ? parent->bvh : tak::BoundingBox(model.dimensions.min, model.dimensions.max);
 
   if (node->mesh) {
     if (node->mesh->bb.valid) {
@@ -458,9 +458,9 @@ void ModelManager::calculateBoundingBox(Node *node, Node *parent, Model &model) 
   }
 }
 
-void ModelManager::loadNode(Node *parent, const tinygltf::Node &node, uint32_t nodeIndex, Model &model, const tinygltf::Model &gltfModel, LoaderInfo &loaderInfo,
+void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex, Model &model, const tinygltf::Model &gltfModel, tak::LoaderInfo &loaderInfo,
                             float globalscale) {
-  Node *newNode = new Node{};
+  tak::Node *newNode = new tak::Node{};
   newNode->index = nodeIndex;
   newNode->parent = parent;
   newNode->name = node.name;
@@ -496,7 +496,7 @@ void ModelManager::loadNode(Node *parent, const tinygltf::Node &node, uint32_t n
 
   if (node.mesh > -1) {
     const tinygltf::Mesh mesh = gltfModel.meshes[node.mesh];
-    Mesh *newMesh = new Mesh(newNode->matrix);
+    tak::Mesh *newMesh = new tak::Mesh(newNode->matrix);
     for (size_t i = 0; i < mesh.primitives.size(); i++) {
       const tinygltf::Primitive &primitive = mesh.primitives[i];
       uint32_t vertexStart = static_cast<uint32_t>(loaderInfo.vertexPos);
@@ -587,7 +587,7 @@ void ModelManager::loadNode(Node *parent, const tinygltf::Node &node, uint32_t n
         hasSkin = (bufferJoints && bufferWeights);
 
         for (size_t v = 0; v < posAccessor.count; v++) {
-          Vertex &vert = loaderInfo.vertexBuffer[loaderInfo.vertexPos];
+          tak::Vertex &vert = loaderInfo.vertexBuffer[loaderInfo.vertexPos];
           vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * posByteStride]), 1.0f);
           vert.normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * normByteStride]) : glm::vec3(0.0f)));
           vert.uv0 = bufferTexCoordSet0 ? glm::make_vec2(&bufferTexCoordSet0[v * uv0ByteStride]) : glm::vec3(0.0f);
@@ -661,7 +661,8 @@ void ModelManager::loadNode(Node *parent, const tinygltf::Node &node, uint32_t n
             return;
         }
       }
-      Primitive *newPrimitive = new Primitive(indexStart, indexCount, vertexCount, primitive.material > -1 ? model.materials[primitive.material] : model.materials.back());
+      tak::Primitive *newPrimitive =
+          new tak::Primitive(indexStart, indexCount, vertexCount, primitive.material > -1 ? model.materials[primitive.material] : model.materials.back());
       newPrimitive->setBoundingBox(posMin, posMax);
       newMesh->primitives.push_back(newPrimitive);
     }
@@ -687,7 +688,7 @@ void ModelManager::loadNode(Node *parent, const tinygltf::Node &node, uint32_t n
 
 void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
   for (tinygltf::Skin &source : gltfModel.skins) {
-    Skin *newSkin = new Skin{};
+    tak::Skin *newSkin = new tak::Skin{};
     newSkin->name = source.name;
 
     // Find skeleton root node
@@ -697,7 +698,7 @@ void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
 
     // Find joint nodes
     for (int jointIndex : source.joints) {
-      Node *node = nodeFromIndex(jointIndex, model);
+      tak::Node *node = nodeFromIndex(jointIndex, model);
       if (node) {
         newSkin->joints.push_back(nodeFromIndex(jointIndex, model));
       }
