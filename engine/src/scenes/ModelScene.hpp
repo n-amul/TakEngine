@@ -25,33 +25,13 @@ class TAK_API ModelScene : public VulkanBase {
   VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
   VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
 
-  // Models
-  std::vector<ModelManager::Model> models;
-
-  // Uniform buffers
-  struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::vec3 lightPos;
-    glm::vec3 viewPos;
+  struct Textures {
+    TextureManager::Texture environmentCube;  // HDR environment map
+    TextureManager::Texture empty;            // Fallback texture
+    TextureManager::Texture lutBrdf;          // BRDF lookup table
+    TextureManager::Texture irradianceCube;   // Diffuse irradiance
+    TextureManager::Texture prefilteredCube;  // Specular prefiltered map
   };
-  std::vector<BufferManager::Buffer> uniformBuffers;
-  std::vector<void*> uniformBuffersMapped;
-
-  std::vector<std::vector<VkDescriptorSet>> descriptorSets;
-
-  // Push constants for per-object transforms
-  struct PushConstantData {
-    glm::mat4 model;
-    // glm::mat4 mvp;
-    uint32_t materialIndex;
-  } pushConstantData;
-
-  // Scene state
-  float totalTime = 0.0f;
-  bool animationEnabled = true;
-  uint32_t currentAnimationIndex = 0;
 
   // Helper methods
   void createDescriptorSetLayout();

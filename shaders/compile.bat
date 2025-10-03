@@ -11,5 +11,11 @@ cd /d "%~dp0"
 %GLSLC% model.vert -o "model.vert.spv"
 %GLSLC% model.frag -o "model.frag.spv"
 
+%GLSLC% skybox.vert -o "skybox.vert.spv"
+%GLSLC% skybox.frag -o "skybox.frag.spv"
+
+%GLSLC% triangle.vert -o "triangle.vert.spv"
+%GLSLC% triangle.frag -o "triangle.frag.spv"
+
 echo Done.
 pause
