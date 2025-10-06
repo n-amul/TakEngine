@@ -30,10 +30,6 @@ class TAK_API TriangleScene : public VulkanBase {
     glm::mat4 view;
     glm::mat4 proj;
   };
-  struct SkyboxUniformBufferObject {
-    glm::mat4 view;  // View matrix with translation removed
-    glm::mat4 proj;
-  };
   // Scene-specific vertex structure
   struct Vertex {
     glm::vec3 pos;
@@ -68,27 +64,6 @@ class TAK_API TriangleScene : public VulkanBase {
       return attributeDescriptions;
     }
   };
-  // Skybox vertex structure (position only)
-  struct SkyboxVertex {
-    glm::vec3 pos;
-
-    static VkVertexInputBindingDescription getBindingDescription() {
-      VkVertexInputBindingDescription bindingDescription{};
-      bindingDescription.binding = 0;
-      bindingDescription.stride = sizeof(SkyboxVertex);
-      bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-      return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 1> getAttributeDescriptions() {
-      std::array<VkVertexInputAttributeDescription, 1> attributeDescriptions{};
-      attributeDescriptions[0].binding = 0;
-      attributeDescriptions[0].location = 0;
-      attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-      attributeDescriptions[0].offset = offsetof(SkyboxVertex, pos);
-      return attributeDescriptions;
-    }
-  };
   // main scene descriptor sets
   VkDescriptorSetLayout descriptorSetLayout;
   VkDescriptorPool descriptorPool;
@@ -115,33 +90,6 @@ class TAK_API TriangleScene : public VulkanBase {
                                         {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}, {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
                                         {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},   {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}};
 
-  // Skybox specific objs
-  VkDescriptorSetLayout skyboxDescriptorSetLayout;
-  std::vector<VkDescriptorSet> skyboxDescriptorSets;
-  VkPipeline skyboxPipeline = VK_NULL_HANDLE;
-  VkPipelineLayout skyboxPipelineLayout = VK_NULL_HANDLE;
-  BufferManager::Buffer skyboxVertexBuffer;
-  BufferManager::Buffer skyboxIndexBuffer;
-  std::vector<BufferManager::Buffer> skyboxUniformBuffers;
-  std::vector<void*> skyboxUniformBuffersMapped;
-  TextureManager::Texture skyboxTexture;
-
-  const std::vector<SkyboxVertex> skyboxVertices = {{{-100.0f, 100.0f, -100.0f}}, {{-100.0f, -100.0f, -100.0f}}, {{100.0f, -100.0f, -100.0f}}, {{100.0f, 100.0f, -100.0f}},
-                                                    {{-100.0f, 100.0f, 100.0f}},  {{-100.0f, -100.0f, 100.0f}},  {{100.0f, -100.0f, 100.0f}},  {{100.0f, 100.0f, 100.0f}}};
-
-  const std::vector<uint16_t> skyboxIndices = {// Front face
-                                               0, 1, 2, 2, 3, 0,
-                                               // Back face
-                                               4, 5, 6, 6, 7, 4,
-                                               // Left face
-                                               4, 5, 1, 1, 0, 4,
-                                               // Right face
-                                               3, 2, 6, 6, 7, 3,
-                                               // Top face
-                                               4, 0, 3, 3, 7, 4,
-                                               // Bottom face
-                                               1, 5, 6, 6, 2, 1};
-
   f32 rotationAngle = 0.0f;
   f32 totalTime = 0.0f;
 
@@ -151,18 +99,9 @@ class TAK_API TriangleScene : public VulkanBase {
   void createDescriptorPool();
   void createDescriptorSetLayout();
   void createDescriptorSets();
+  void createSkyboxDescriptorSets();
   void createUniformBuffers();
   void updateUniformBuffer(f32 deltatime);
   void createTextures();
   void createModelTextures(const std::string& filename);
-
-  // Skybox methods
-  void createSkyboxPipeline();
-  void createSkyboxVertexBuffer();
-  void createSkyboxIndexBuffer();
-  void createSkyboxDescriptorSetLayout();
-  void createSkyboxDescriptorSets();
-  void createSkyboxUniformBuffers();
-  void updateSkyboxUniformBuffer();
-  void createSkyboxTexture();
 };

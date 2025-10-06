@@ -140,18 +140,32 @@ class TextureManager {
     VkSamplerAddressMode addressModeV;
     VkSamplerAddressMode addressModeW;
   };
+  const Texture& getDefaultTexture() const { return defaultTexture; }
+  VkSampler getDefaultSampler() const { return defaultSampler; }
+  void initializeDefaults();
 
  private:
   std::shared_ptr<VulkanContext> context;
   std::shared_ptr<CommandBufferUtils> cmdUtils;
   std::shared_ptr<BufferManager> bufferManager;
+  Texture defaultTexture;
+  VkSampler defaultSampler = VK_NULL_HANDLE;
+
   // consider to cache textures here for switching scenes
   // std::unordered_map<std::string, Texture> loadedTextures;
 
  public:
   TextureManager(std::shared_ptr<VulkanContext> ctx, std::shared_ptr<CommandBufferUtils> cmdUtils, std::shared_ptr<BufferManager> bufferManager)
-      : context(ctx), cmdUtils(cmdUtils), bufferManager(bufferManager) {}
-  ~TextureManager() {}
+      : context(ctx), cmdUtils(cmdUtils), bufferManager(bufferManager) {
+    initializeDefaults();
+  }
+  ~TextureManager() {
+    if (defaultSampler != VK_NULL_HANDLE && defaultSampler != defaultTexture.sampler) {
+      vkDestroySampler(context->device, defaultSampler, nullptr);
+    }
+    // defaultTexture will clean itself up in its destructor
+  }
+
   void destroyTexture(Texture& texture);
   TextureManager::Texture createTextureFromFile(const std::string& filepath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
   VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t levelCount = 1);

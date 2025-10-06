@@ -10,8 +10,8 @@
 int main() {
   try {
     spdlog::info("Main function started");
-    TriangleScene tex;
-    tex.run();
+    ModelScene test;
+    test.run();
     // ModelScene modelScene;
     // modelScene.run();
 

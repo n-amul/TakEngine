@@ -704,6 +704,8 @@ TextureManager::Texture TextureManager::createCubemapFromFiles(const std::array<
 TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::string& filepath, VkFormat format) {
   spdlog::info("Loading cubemap from single file: {}", filepath);
 
+  // bool isHDR = filepath.find(".hdr") != -1;
+
   int imgWidth, imgHeight, imgChannels;
   stbi_uc* pixels = stbi_load(filepath.c_str(), &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
 
@@ -715,8 +717,13 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   int faceSize = 0;
   bool isHorizontalCross = false;
   bool isVerticalStrip = false;
+  bool isHorizontalStrip = false;
 
-  if (imgWidth * 3 == imgHeight * 4) {
+  if (imgWidth == imgHeight * 6) {
+    // Horizontal strip layout (6:1 aspect ratio)
+    isHorizontalStrip = true;
+    faceSize = imgHeight;
+  } else if (imgWidth * 3 == imgHeight * 4) {
     // Horizontal cross layout (4:3 aspect ratio)
     isHorizontalCross = true;
     faceSize = imgWidth / 4;
@@ -739,8 +746,10 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   void* data;
   vkMapMemory(context->device, stagingBuffer.memory, 0, totalSize, 0, &data);
   unsigned char* destData = static_cast<unsigned char*>(data);
-
   auto copyFace = [&](int faceIndex, int srcX, int srcY) {
+    int testIdx = (srcY * imgWidth + srcX) * 4;
+    spdlog::info("Face {}: Reading from ({}, {}), first pixel RGBA: ({}, {}, {}, {})", faceIndex, srcX, srcY, pixels[testIdx], pixels[testIdx + 1], pixels[testIdx + 2],
+                 pixels[testIdx + 3]);
     for (int y = 0; y < faceSize; ++y) {
       for (int x = 0; x < faceSize; ++x) {
         int srcIdx = ((srcY + y) * imgWidth + (srcX + x)) * 4;
@@ -755,16 +764,23 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
     //     [+Y]
     // [-X][+Z][+X][-Z]
     //     [-Y]
+    spdlog::info("isHorizontalCross");
     copyFace(0, faceSize * 2, faceSize);  // +X (right)
     copyFace(1, 0, faceSize);             // -X (left)
-    copyFace(2, faceSize, 0);             // +Y (top)
+    copyFace(2, faceSize, 0);             // +Y (check if valid)
     copyFace(3, faceSize, faceSize * 2);  // -Y (bottom)
-    copyFace(4, faceSize, faceSize);      // +Z (front)
+    copyFace(4, faceSize, faceSize);      // +Z (front - center of cross)
     copyFace(5, faceSize * 3, faceSize);  // -Z (back)
+
   } else if (isVerticalStrip) {
     // Vertical strip layout (top to bottom: +X, -X, +Y, -Y, +Z, -Z)
     for (int i = 0; i < 6; ++i) {
       copyFace(i, 0, i * faceSize);
+    }
+  } else if (isHorizontalStrip) {
+    // Horizontal strip: +X, -X, +Y, -Y, +Z, -Z (left to right)
+    for (int i = 0; i < 6; ++i) {
+      copyFace(i, i * faceSize, 0);
     }
   }
 
@@ -863,4 +879,58 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   return texture;
 }
 
+void TextureManager::initializeDefaults() {
+  // Create a small white texture to use as default
+  const uint32_t width = 4;
+  const uint32_t height = 4;
+  VkDeviceSize imageSize = width * height * 4;  // RGBA
+
+  // Create white pixel data
+  std::vector<uint8_t> pixels(imageSize, 255);  // All white
+
+  // Create staging buffer
+  BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(imageSize);
+
+  // Copy pixel data to staging buffer
+  void* data;
+  vkMapMemory(context->device, stagingBuffer.memory, 0, imageSize, 0, &data);
+  memcpy(data, pixels.data(), static_cast<size_t>(imageSize));
+  vkUnmapMemory(context->device, stagingBuffer.memory);
+
+  // Initialize texture
+  defaultTexture.device = context->device;
+  InitTexture(defaultTexture, width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+  // Transition image layout and copy buffer to image
+  VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
+
+  // Transition to transfer destination
+  transitionImageLayout(defaultTexture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, commandBuffer);
+
+  // Copy buffer to image
+  VkExtent3D copyExtent = {width, height, 1};
+  copyBufferToImage(defaultTexture, stagingBuffer.buffer, commandBuffer, 0, 0, copyExtent);
+
+  // Transition to shader read
+  transitionImageLayout(defaultTexture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+
+  cmdUtils->endSingleTimeCommands(commandBuffer);
+
+  // Create image view
+  defaultTexture.imageView = createImageView(defaultTexture.image, VK_FORMAT_R8G8B8A8_UNORM);
+
+  // Create default sampler
+  TextureSampler samplerInfo{};
+  samplerInfo.magFilter = VK_FILTER_LINEAR;
+  samplerInfo.minFilter = VK_FILTER_LINEAR;
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+  defaultTexture.sampler = createTextureSampler(samplerInfo);
+  defaultSampler = defaultTexture.sampler;
+
+  // Clean up staging buffer (it will be destroyed automatically when it goes out of scope)
+}
 void TextureManager::destroyTexture(Texture& texture) { texture = Texture(); }

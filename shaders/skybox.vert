@@ -9,7 +9,7 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 0) out vec3 texCoords;
 
 void main() {
-    texCoords = inPosition;
+    texCoords = normalize(inPosition);
     
     // Remove translation from view matrix and apply to position
     vec4 pos = ubo.proj * ubo.view * vec4(inPosition, 1.0);

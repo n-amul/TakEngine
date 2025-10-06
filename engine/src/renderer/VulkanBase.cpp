@@ -9,7 +9,7 @@
 #include <set>
 #include <stdexcept>
 
-#include "../core/utils.hpp"
+#include "core/utils.hpp"
 
 //-----------------------------------------------------------
 // Public Methods
@@ -242,12 +242,18 @@ void VulkanBase::initVulkan() {
   createDepthResources();
   createRenderPass();
 
-  // 6. Let derived class load its resources
+  // 6. load resources
   spdlog::info("loading resources...");
-  loadResources();
-  // 7. Call derived class to create pipeline
+  createSkyboxDescriptorSetLayout();
+  createSkyboxTexture();
+  createSkyboxVertexBuffer();
+  createSkyboxIndexBuffer();
+  createSkyboxUniformBuffers();
+  loadResources();  // resource from derived class
+  // 7. create pipeline
   spdlog::info("creating pipeline...");
-  createPipeline();
+  createSkyboxPipeline();
+  createPipeline();  // frome derived class
   // 8. Final setup
   spdlog::info("creating framebuffers, commandbuffers,sync objects");
   createFramebuffers();
@@ -977,42 +983,212 @@ void VulkanBase::mouseButtonCallback(GLFWwindow* window, int button, int action,
     app->camera.setFov(45.0f);
   }
 }
+// skybox init
+void VulkanBase::createSkyboxPipeline() {
+  spdlog::info("Creating skybox pipeline");
 
-// testing purpose
-void VulkanBase::initContext() {
-  // 1. Core Vulkan setup
-  spdlog::info("Creating instance...");
-  createInstance();
-  spdlog::info("Setting up debug messenger...");
-  setupDebugMessenger();
-  spdlog::info("Creating surface...");
-  createSurface();
-  spdlog::info("Picking physical device...");
-  pickPhysicalDevice();
-  spdlog::info("Creating logical device...");
-  createLogicalDevice();
-  spdlog::info("Creating context...");
-  // 2. Context initialization
-  context = std::make_shared<VulkanContext>();
-  context->instance = instance;
-  context->device = device;
-  context->physicalDevice = physicalDevice;
-  context->graphicsQueue = graphicsQueue;
-  context->presentQueue = presentQueue;
-  vkGetPhysicalDeviceProperties(physicalDevice, &context->properties);
-  vkGetPhysicalDeviceFeatures(physicalDevice, &context->features);
-  context->enabledFeatures = deviceFeatures;
-  context->queueFamilyIndex = queueFamilyIndex;
+  // Load shaders
+  std::string vertPath = std::string(SHADER_DIR) + "/skybox.vert.spv";
+  std::string fragPath = std::string(SHADER_DIR) + "/skybox.frag.spv";
+  auto vertShaderCode = readFile(vertPath);
+  auto fragShaderCode = readFile(fragPath);
+  // Add file existence check
+  spdlog::info("Skybox vertex shader size: {} bytes", vertShaderCode.size());
+  spdlog::info("Skybox fragment shader size: {} bytes", fragShaderCode.size());
 
-  spdlog::info("Creating commandpool...");
-  // 3. Command pools (needed for resource loading)
-  createCommandPool();
-  context->commandPool = commandPool;
-  context->transientCommandPool = transientCommandPool;
+  VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+  VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
-  spdlog::info("Creating utils...");
-  // 4. Initialize shared utilities
-  cmdUtils = std::make_shared<CommandBufferUtils>(context);
-  bufferManager = std::make_shared<BufferManager>(context, cmdUtils);
-  textureManager = std::make_shared<TextureManager>(context, cmdUtils, bufferManager);
+  // Shader stage creation
+  VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+  vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+  vertShaderStageInfo.module = vertShaderModule;
+  vertShaderStageInfo.pName = "main";
+
+  VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+  fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  fragShaderStageInfo.module = fragShaderModule;
+  fragShaderStageInfo.pName = "main";
+
+  VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+  // Vertex input configuration for skybox
+  auto bindingDescription = SkyboxVertex::getBindingDescription();
+  auto attributeDescriptions = SkyboxVertex::getAttributeDescriptions();
+
+  VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+  vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  vertexInputInfo.vertexBindingDescriptionCount = 1;
+  vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+  vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+  vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+  // Input assembly
+  VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+  inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+  // Viewport state (dynamic)
+  VkPipelineViewportStateCreateInfo viewportState{};
+  viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewportState.viewportCount = 1;
+  viewportState.scissorCount = 1;
+
+  // Rasterizer - Important: Front face culling for skybox
+  VkPipelineRasterizationStateCreateInfo rasterizer{};
+  rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  rasterizer.depthClampEnable = VK_FALSE;
+  rasterizer.rasterizerDiscardEnable = VK_FALSE;
+  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterizer.lineWidth = 1.0f;
+  rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;  // Cull front faces since we're inside the cube (so front is discarded)
+  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizer.depthBiasEnable = VK_FALSE;
+
+  // Multisampling (disabled)
+  VkPipelineMultisampleStateCreateInfo multisampling{};
+  multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  multisampling.sampleShadingEnable = VK_FALSE;
+  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+  // Color blending
+  VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+  colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  colorBlendAttachment.blendEnable = VK_FALSE;
+
+  VkPipelineColorBlendStateCreateInfo colorBlending{};
+  colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  colorBlending.logicOpEnable = VK_FALSE;
+  colorBlending.attachmentCount = 1;
+  colorBlending.pAttachments = &colorBlendAttachment;
+
+  // Dynamic state
+  std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+  VkPipelineDynamicStateCreateInfo dynamicState{};
+  dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+  dynamicState.pDynamicStates = dynamicStates.data();
+
+  // You want the skybox to always appear “behind” everything else,
+  // By not writing its depth, the depth buffer still holds valid values from real geometry later.
+  VkPipelineDepthStencilStateCreateInfo depthStencil{};
+  depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depthStencil.depthTestEnable = VK_TRUE;
+  depthStencil.depthWriteEnable = VK_FALSE;                   // Don't write to depth buffer
+  depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;  // Pass if depth is less or equal
+  depthStencil.depthBoundsTestEnable = VK_FALSE;
+  depthStencil.stencilTestEnable = VK_FALSE;
+
+  // Pipeline layout
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+  pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipelineLayoutInfo.setLayoutCount = 1;
+  pipelineLayoutInfo.pSetLayouts = &skyboxDescriptorSetLayout;
+
+  if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &skyboxPipelineLayout) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create skybox pipeline layout!");
+  }
+
+  // Create graphics pipeline
+  VkGraphicsPipelineCreateInfo pipelineInfo{};
+  pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  pipelineInfo.stageCount = 2;
+  pipelineInfo.pStages = shaderStages;
+  pipelineInfo.pVertexInputState = &vertexInputInfo;
+  pipelineInfo.pInputAssemblyState = &inputAssembly;
+  pipelineInfo.pViewportState = &viewportState;
+  pipelineInfo.pRasterizationState = &rasterizer;
+  pipelineInfo.pMultisampleState = &multisampling;
+  pipelineInfo.pDepthStencilState = &depthStencil;
+  pipelineInfo.pColorBlendState = &colorBlending;
+  pipelineInfo.pDynamicState = &dynamicState;
+  pipelineInfo.layout = skyboxPipelineLayout;
+  pipelineInfo.renderPass = renderPass;
+  pipelineInfo.subpass = 0;
+
+  if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &skyboxPipeline) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create skybox graphics pipeline!");
+  }
+
+  vkDestroyShaderModule(device, fragShaderModule, nullptr);
+  vkDestroyShaderModule(device, vertShaderModule, nullptr);
+
+  spdlog::info("Skybox pipeline created successfully");
+}
+
+void VulkanBase::createSkyboxVertexBuffer() {
+  VkDeviceSize bufferSize = sizeof(skyboxVertices[0]) * skyboxVertices.size();
+  skyboxVertexBuffer = bufferManager->createGPULocalBuffer(skyboxVertices.data(), bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+}
+
+void VulkanBase::createSkyboxIndexBuffer() {
+  VkDeviceSize bufferSize = sizeof(skyboxIndices[0]) * skyboxIndices.size();
+  skyboxIndexBuffer = bufferManager->createGPULocalBuffer(skyboxIndices.data(), bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+}
+
+void VulkanBase::createSkyboxDescriptorSetLayout() {
+  VkDescriptorSetLayoutBinding uboLayoutBinding{};
+  uboLayoutBinding.binding = 0;
+  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uboLayoutBinding.descriptorCount = 1;
+  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo{};
+  layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+  layoutInfo.pBindings = bindings.data();
+
+  if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &skyboxDescriptorSetLayout) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create skybox descriptor set layout!");
+  }
+}
+
+void VulkanBase::createSkyboxUniformBuffers() {
+  VkDeviceSize bufferSize = sizeof(SkyboxUniformBufferObject);
+  skyboxUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+  skyboxUniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    skyboxUniformBuffers[i] =
+        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    vkMapMemory(device, skyboxUniformBuffers[i].memory, 0, bufferSize, 0, &skyboxUniformBuffersMapped[i]);
+  }
+}
+
+void VulkanBase::updateSkyboxUniformBuffer() {
+  SkyboxUniformBufferObject ubo{};
+  // Remove translation from view matrix for skybox
+  glm::mat4 view = camera.getViewMatrix();
+  view[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);  // Zero out translation
+  ubo.view = view;
+
+  float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
+  ubo.proj = camera.getProjectionMatrix(aspectRatio);
+
+  memcpy(skyboxUniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
+}
+
+void VulkanBase::createSkyboxTexture() {
+  // std::array<std::string, 6> faceFilepaths = {
+  //     std::string(TEXTURE_DIR) + "/skybox/right.png",   // +X
+  //     std::string(TEXTURE_DIR) + "/skybox/left.png",    // -X
+  //     std::string(TEXTURE_DIR) + "/skybox/top.png",     // +Y
+  //     std::string(TEXTURE_DIR) + "/skybox/bottom.png",  // -Y
+  //     std::string(TEXTURE_DIR) + "/skybox/front.png",   // +Z
+  //     std::string(TEXTURE_DIR) + "/skybox/back.png"     //-Z
+  // };
+  // skyboxTexture = textureManager->createCubemapFromFiles(faceFilepaths);
+  skyboxTexture = textureManager->createCubemapFromSingleFile(std::string(TEXTURE_DIR) + "/skybox/cubemap.png", VK_FORMAT_R8G8B8A8_SRGB);
 }
