@@ -90,3 +90,12 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_INLINE
 #define GLM_FORCE_XYZW_ONLY
+
+#define VK_CHECK_RESULT(f)                                                                                          \
+  {                                                                                                                 \
+    VkResult res = (f);                                                                                             \
+    if (res != VK_SUCCESS) {                                                                                        \
+      std::cout << "Fatal : VkResult is \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << std::endl; \
+      assert(res == VK_SUCCESS);                                                                                    \
+    }                                                                                                               \
+  }

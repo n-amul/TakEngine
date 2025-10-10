@@ -452,6 +452,9 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
   // Create sampler based on textureSampler parameter
   texture.sampler = createTextureSampler(textureSampler, static_cast<float>(texture.mipLevels));
 
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
   return texture;
 }
 
@@ -879,7 +882,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   return texture;
 }
 
-void TextureManager::initializeDefaults() {
+TextureManager::Texture TextureManager::createDefault() {
+  Texture texture;
   // Create a small white texture to use as default
   const uint32_t width = 4;
   const uint32_t height = 4;
@@ -898,27 +902,27 @@ void TextureManager::initializeDefaults() {
   vkUnmapMemory(context->device, stagingBuffer.memory);
 
   // Initialize texture
-  defaultTexture.device = context->device;
-  InitTexture(defaultTexture, width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+  texture.device = context->device;
+  InitTexture(texture, width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
   // Transition image layout and copy buffer to image
   VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
 
   // Transition to transfer destination
-  transitionImageLayout(defaultTexture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, commandBuffer);
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, commandBuffer);
 
   // Copy buffer to image
   VkExtent3D copyExtent = {width, height, 1};
-  copyBufferToImage(defaultTexture, stagingBuffer.buffer, commandBuffer, 0, 0, copyExtent);
+  copyBufferToImage(texture, stagingBuffer.buffer, commandBuffer, 0, 0, copyExtent);
 
   // Transition to shader read
-  transitionImageLayout(defaultTexture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
 
   cmdUtils->endSingleTimeCommands(commandBuffer);
 
   // Create image view
-  defaultTexture.imageView = createImageView(defaultTexture.image, VK_FORMAT_R8G8B8A8_UNORM);
+  texture.imageView = createImageView(texture.image, VK_FORMAT_R8G8B8A8_UNORM);
 
   // Create default sampler
   TextureSampler samplerInfo{};
@@ -928,9 +932,12 @@ void TextureManager::initializeDefaults() {
   samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
   samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-  defaultTexture.sampler = createTextureSampler(samplerInfo);
-  defaultSampler = defaultTexture.sampler;
+  texture.sampler = createTextureSampler(samplerInfo);
+  // descriptor
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
 
-  // Clean up staging buffer (it will be destroyed automatically when it goes out of scope)
+  return texture;
 }
 void TextureManager::destroyTexture(Texture& texture) { texture = Texture(); }

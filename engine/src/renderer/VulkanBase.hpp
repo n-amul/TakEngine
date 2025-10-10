@@ -157,7 +157,6 @@ class TAK_API VulkanBase {
   VkDebugUtilsMessengerEXT debugMessenger;
   const std::vector<const char*> validationLayers = {"VK_LAYER_KHRONOS_validation"};
   const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-  // skybox
   // Skybox specific objs
   VkDescriptorSetLayout skyboxDescriptorSetLayout;
   std::vector<VkDescriptorSet> skyboxDescriptorSets;
@@ -222,14 +221,6 @@ class TAK_API VulkanBase {
 
       // Right face (x = 1)
       2, 6, 7, 7, 3, 2};
-
-  void createSkyboxPipeline();
-  void createSkyboxVertexBuffer();
-  void createSkyboxIndexBuffer();
-  void createSkyboxDescriptorSetLayout();
-  void createSkyboxUniformBuffers();
-  void updateSkyboxUniformBuffer();
-  void createSkyboxTexture();
 
  private:
   // Validation layer setup

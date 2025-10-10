@@ -15,7 +15,7 @@ layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outUV0;
 layout(location = 3) out vec2 outUV1;
 layout(location = 4) out vec4 outColor;
-layout(location = 5) out vec3 outViewDir;
+layout(location = 5) out vec3 outViewDir; //consider compute formula use these in cpu and pass the result instead of using outviewDir and LightDir
 layout(location = 6) out vec3 outLightDir;
 
 // Set 0: Scene uniforms
@@ -41,13 +41,6 @@ layout(push_constant) uniform PushConstants {
 
 // Constants
 #define MAX_NUM_JOINTS 128
-
-// Helper function for skinning
-mat4 getSkinMatrix(int meshIndex) {
-    // In a real implementation, you'd access the joint matrices here
-    // For now, return the mesh's world matrix
-    return meshData.meshMatrices[meshIndex];
-}
 
 void main() {
     vec4 localPos = vec4(inPos, 1.0);

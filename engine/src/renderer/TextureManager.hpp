@@ -20,6 +20,7 @@ class TextureManager {
     VkImageView imageView = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
+    VkDescriptorImageInfo descriptor;
 
     // Image properties
     VkExtent3D extent = {0, 0, 1};
@@ -28,7 +29,7 @@ class TextureManager {
     uint32_t layerCount = 1;  // 1 for 2D, 6 for cubemap
     bool isCubemap() const { return layerCount == 6; }
 
-    // Runtime state (very useful!)
+    // Runtime state
     VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     // Optional
@@ -46,9 +47,11 @@ class TextureManager {
           imageView(other.imageView),
           memory(other.memory),
           sampler(other.sampler),
+          descriptor(other.descriptor),
           extent(other.extent),
           format(other.format),
           mipLevels(other.mipLevels),
+          layerCount(other.layerCount),
           currentLayout(other.currentLayout),
           usage(other.usage),
           imageType(other.imageType),
@@ -64,6 +67,8 @@ class TextureManager {
       other.usage = 0;
       other.imageType = VK_IMAGE_TYPE_2D;
       other.device = VK_NULL_HANDLE;
+      other.descriptor = {};
+      other.layerCount = 1;
     }
 
     // Move assignment operator
@@ -82,6 +87,8 @@ class TextureManager {
         usage = other.usage;
         imageType = other.imageType;
         device = other.device;
+        descriptor = other.descriptor;
+        layerCount = other.layerCount;
 
         other.image = VK_NULL_HANDLE;
         other.imageView = VK_NULL_HANDLE;
@@ -94,6 +101,8 @@ class TextureManager {
         other.usage = 0;
         other.imageType = VK_IMAGE_TYPE_2D;
         other.device = VK_NULL_HANDLE;
+        other.descriptor = {};
+        other.layerCount = 1;
       }
       return *this;
     }
@@ -140,31 +149,20 @@ class TextureManager {
     VkSamplerAddressMode addressModeV;
     VkSamplerAddressMode addressModeW;
   };
-  const Texture& getDefaultTexture() const { return defaultTexture; }
-  VkSampler getDefaultSampler() const { return defaultSampler; }
-  void initializeDefaults();
+  Texture createDefault();
 
  private:
   std::shared_ptr<VulkanContext> context;
   std::shared_ptr<CommandBufferUtils> cmdUtils;
   std::shared_ptr<BufferManager> bufferManager;
-  Texture defaultTexture;
-  VkSampler defaultSampler = VK_NULL_HANDLE;
 
   // consider to cache textures here for switching scenes
   // std::unordered_map<std::string, Texture> loadedTextures;
 
  public:
   TextureManager(std::shared_ptr<VulkanContext> ctx, std::shared_ptr<CommandBufferUtils> cmdUtils, std::shared_ptr<BufferManager> bufferManager)
-      : context(ctx), cmdUtils(cmdUtils), bufferManager(bufferManager) {
-    initializeDefaults();
-  }
-  ~TextureManager() {
-    if (defaultSampler != VK_NULL_HANDLE && defaultSampler != defaultTexture.sampler) {
-      vkDestroySampler(context->device, defaultSampler, nullptr);
-    }
-    // defaultTexture will clean itself up in its destructor
-  }
+      : context(ctx), cmdUtils(cmdUtils), bufferManager(bufferManager) {}
+  ~TextureManager() {}
 
   void destroyTexture(Texture& texture);
   TextureManager::Texture createTextureFromFile(const std::string& filepath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);

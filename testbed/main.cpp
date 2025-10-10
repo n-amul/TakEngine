@@ -10,10 +10,10 @@
 int main() {
   try {
     spdlog::info("Main function started");
-    ModelScene test;
-    test.run();
-    // ModelScene modelScene;
-    // modelScene.run();
+    // ModelScene test;
+    // test.run();
+    TriangleScene tri;
+    tri.run();
 
     spdlog::info("Main function ending normally");
     return 0;

@@ -15,15 +15,17 @@ class BufferManager {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
     VkDevice device = VK_NULL_HANDLE;
+    VkDescriptorBufferInfo descriptor;
 
     Buffer() = default;
     Buffer(VkDevice dev) : device(dev) {}
     // steal the other's resources and other will lose ownership using move() implicitly
-    Buffer(Buffer&& other) noexcept : buffer(other.buffer), memory(other.memory), size(other.size), device(other.device) {
+    Buffer(Buffer&& other) noexcept : buffer(other.buffer), memory(other.memory), size(other.size), device(other.device), descriptor(other.descriptor) {
       other.buffer = VK_NULL_HANDLE;
       other.memory = VK_NULL_HANDLE;
       other.size = 0;
       other.device = VK_NULL_HANDLE;
+      other.descriptor = {};
     }
     Buffer& operator=(Buffer&& other) noexcept {
       if (this != &other) {
@@ -33,11 +35,13 @@ class BufferManager {
         memory = other.memory;
         size = other.size;
         device = other.device;
+        descriptor = other.descriptor;
 
         other.buffer = VK_NULL_HANDLE;
         other.memory = VK_NULL_HANDLE;
         other.size = 0;
         other.device = VK_NULL_HANDLE;
+        other.descriptor = {};
       }
       return *this;
     }
