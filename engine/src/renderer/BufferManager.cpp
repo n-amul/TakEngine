@@ -5,7 +5,7 @@
 
 #include "BufferManager.hpp"
 
-BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties) {
+BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, bool keepMapped) {
   Buffer buffer(context->device);  // Initialize with device handle
   buffer.size = size;
 
@@ -33,6 +33,19 @@ BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsa
   }
   // link buffer to memory somewhere in gpu
   vkBindBufferMemory(context->device, buffer.buffer, buffer.memory, 0);
+  // set up descriptor here?
+  // Map the buffer if requested and if it's host-visible
+  if (keepMapped && (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+    if (vkMapMemory(context->device, buffer.memory, 0, size, 0, &buffer.mapped) != VK_SUCCESS) {
+      vkDestroyBuffer(context->device, buffer.buffer, nullptr);
+      vkFreeMemory(context->device, buffer.memory, nullptr);
+      throw std::runtime_error("failed to map buffer memory!");
+    }
+    buffer.isMapped = true;
+  }
+  buffer.descriptor.buffer = buffer.buffer;
+  buffer.descriptor.offset = 0;
+  buffer.descriptor.range = size;
 
   return buffer;
 }
@@ -55,11 +68,24 @@ BufferManager::Buffer BufferManager::createGPULocalBuffer(const void* data, VkDe
 }
 
 void BufferManager::updateBuffer(const Buffer& buffer, const void* data, VkDeviceSize size, VkDeviceSize offset) {
-  // only VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT buffer works
-  void* mappedData;
-  vkMapMemory(context->device, buffer.memory, offset, size, 0, &mappedData);
-  memcpy(mappedData, data, size);
-  vkUnmapMemory(context->device, buffer.memory);
+  if (buffer.isMapped && buffer.mapped) {
+    // Calculate the destination pointer with offset
+    void* destPtr = static_cast<char*>(buffer.mapped) + offset;
+    memcpy(destPtr, data, size);
+    // If the memory is not coherent, we need to flush
+    // check for VK_MEMORY_PROPERTY_HOST_COHERENT_BIT and flush if not set
+    // VkMappedMemoryRange memoryRange{};
+    // memoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    // memoryRange.memory = buffer.memory;
+    // memoryRange.offset = offset;
+    // memoryRange.size = size;
+    // vkFlushMappedMemoryRanges(context->device, 1, &memoryRange);
+  } else {
+    void* mappedData;
+    vkMapMemory(context->device, buffer.memory, offset, size, 0, &mappedData);
+    memcpy(mappedData, data, size);
+    vkUnmapMemory(context->device, buffer.memory);
+  }
 }
 
 void BufferManager::destroyBuffer(Buffer& buffer) {
@@ -91,5 +117,5 @@ void BufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
 }
 
 BufferManager::Buffer BufferManager::createStagingBuffer(VkDeviceSize size) {
-  return createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  return createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, false);
 }

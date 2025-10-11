@@ -1,6 +1,8 @@
 #include "ModelScene.hpp"
 
 #include "core/utils.hpp"
+// TODO: add mapped variable in buffer
+// copy and update buffer function should be not used
 
 void ModelScene::loadResources() {
   emptyTexture = textureManager->createDefault();
@@ -19,15 +21,14 @@ void ModelScene::prepareUniformBuffers() {
   for (auto& uniformBuffer : uniformBuffers) {
     int size = 0;
     uniformBuffer.scene =
-        bufferManager->createBuffer(sizeof(uboMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        bufferManager->createBuffer(sizeof(uboMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     uniformBuffer.params = bufferManager->createBuffer(sizeof(shaderValuesParams), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
   updateUniformData();
 }
 
 void ModelScene::updateUniformData() {
-  // Scene
   float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
   uboMatrices.projection = camera.getProjectionMatrix(aspectRatio);
   uboMatrices.view = camera.getViewMatrix();
@@ -42,9 +43,68 @@ void ModelScene::updateUniformData() {
   uboMatrices.model[1][1] = scale;
   uboMatrices.model[2][2] = scale;
   uboMatrices.model = glm::translate(uboMatrices.model, translate);
-
+  // Shader requires camera position in world space
   glm::mat4 cv = glm::inverse(camera.getViewMatrix());
   uboMatrices.camPos = glm::vec3(cv[3]);
+}
+
+void ModelScene::updateParams() {
+  shaderValuesParams.lightDir = glm::vec4(sin(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), sin(glm::radians(lightSource.rotation.y)),
+                                          cos(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), 0.0f);
+}
+
+void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode) {
+  if (node->mesh) {
+    // Render mesh primitives
+    for (tak::Primitive* primitive : node->mesh->primitives) {
+      if (primitive->material.alphaMode == alphaMode) {
+        std::string pipelineName = "pbr";
+        std::string pipelineVariant = "";
+
+        if (primitive->material.unlit) {
+          // KHR_materials_unlit
+          pipelineName = "unlit";
+        };
+
+        // Material properties define if we e.g. need to bind a pipeline variant with culling disabled (double sided)
+        if (alphaMode == tak::Material::ALPHAMODE_BLEND) {
+          pipelineVariant = "_alpha_blending";
+        } else {
+          if (primitive->material.doubleSided) {
+            pipelineVariant = "_double_sided";
+          }
+        }
+
+        const VkPipeline pipeline = modelPipeline;  // single pipeline for now
+
+        if (boundPipeline != pipeline) {
+          vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+          boundPipeline = pipeline;
+        }
+
+        const std::vector<VkDescriptorSet> descriptorsets = {descriptorSetsScene[currentFrame], primitive->material.descriptorSet,
+                                                             // @todo: per frame-in-flight
+                                                             descriptorSetsMeshData[currentFrame], descriptorSetMaterials};
+        vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, static_cast<uint32_t>(descriptorsets.size()), descriptorsets.data(), 0, NULL);
+
+        // Pass material index for this primitive using a push constant, the shader uses this to index into the material buffer
+        MeshPushConstantBlock pushConstantBlock{};
+        // @todo: index
+        pushConstantBlock.meshIndex = node->mesh->index;
+        pushConstantBlock.materialIndex = primitive->material.materialIndex;
+        vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshPushConstantBlock), &pushConstantBlock);
+
+        if (primitive->hasIndices) {
+          vkCmdDrawIndexed(cmdBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+        } else {
+          vkCmdDraw(cmdBuffer, primitive->vertexCount, 1, 0, 0);
+        }
+      }
+    }
+  };
+  for (auto child : node->children) {
+    renderNode(cmdBuffer, child, ImageIndex, alphaMode);
+  }
 }
 
 void ModelScene::createMaterialBuffer() {
@@ -113,8 +173,9 @@ void ModelScene::createMeshDataBuffer() {
 
   for (auto& shaderMeshDataBuffer : shaderMeshDataBuffers) {
     VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
-    shaderMeshDataBuffer = bufferManager->createGPULocalBuffer(shaderMeshData.data(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
+    shaderMeshDataBuffer =
+        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    bufferManager->updateBuffer(shaderMeshDataBuffer, shaderMeshData.data(), bufferSize, 0);
     // Update descriptor
     shaderMeshDataBuffer.descriptor.buffer = shaderMeshDataBuffer.buffer;
     shaderMeshDataBuffer.descriptor.offset = 0;
@@ -329,7 +390,53 @@ void ModelScene::createPipeline() {
   createModelPipeline();
 }
 
-void ModelScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) {}
+void ModelScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+  // Note: Render pass is already begun in base class recordCommandBuffer()
+  // Just need to bind pipeline and draw
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(swapChainExtent.width);
+  viewport.height = static_cast<float>(swapChainExtent.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swapChainExtent;
+
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, modelPipeline);
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, &scene.vertices.buffer, offsets);
+  if (scene.indices.buffer != VK_NULL_HANDLE) {
+    vkCmdBindIndexBuffer(commandBuffer, scene.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+  }
+  boundPipeline = VK_NULL_HANDLE;
+  //
+  for (auto node : scene.nodes) {
+    renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_OPAQUE);
+  }
+}
+
+void ModelScene::updateScene(float deltaTime) {
+  // Update UBOs
+  updateUniformData();
+  // update shader buffer (TODO: add mapped pointer inside the buffer for performance)
+  bufferManager->updateBuffer(uniformBuffers[currentFrame].scene, &uboMatrices, sizeof(uboMatrices), 0);
+  bufferManager->updateBuffer(uniformBuffers[currentFrame].params, &shaderValuesParams, sizeof(shaderValuesParams), 0);
+  // update animation and params
+  if ((animate) && (scene.animations.size() > 0)) {
+    animationTimer += deltaTime;
+    if (animationTimer > scene.animations[animationIndex].end) {
+      animationTimer -= scene.animations[animationIndex].end;
+    }
+    modelManager->updateAnimation(scene, animationIndex, animationTimer);
+    updateMeshDataBuffer(currentFrame);
+  }
+  updateParams();
+}
 
 void ModelScene::createModelPipeline() {
   // Load shaders
@@ -466,4 +573,33 @@ void ModelScene::createModelPipeline() {
   // TODO: add Double sided, alpha blending pipelines
 
   spdlog::info("Triangle pipeline created successfully");
+}
+
+void ModelScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no push, use fixed size)
+  std::vector<ShaderMeshData> shaderMeshData{};
+  for (auto& node : scene.linearNodes) {
+    ShaderMeshData meshData{};
+    if (node->mesh) {
+      memcpy(meshData.jointMatrix, &node->mesh->jointMatrix, sizeof(glm::mat4) * MAX_NUM_JOINTS);
+      meshData.jointcount = node->mesh->jointcount;
+      meshData.matrix = node->mesh->matrix;
+      shaderMeshData.push_back(meshData);
+    }
+  }
+
+  VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
+  // Update the buffer for the current frame
+  bufferManager->updateBuffer(shaderMeshDataBuffers[index], shaderMeshData.data(), bufferSize, 0);
+}
+
+void ModelScene::cleanupResources() {
+  spdlog::info("Cleaning up model resources");
+  textureManager->destroyTexture(emptyTexture);
+  modelManager->destroyModel(scene);
+  bufferManager->destroyBuffer(shaderMaterialBuffer);
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    bufferManager->destroyBuffer(uniformBuffers[i].params);
+    bufferManager->destroyBuffer(uniformBuffers[i].scene);
+    bufferManager->destroyBuffer(shaderMeshDataBuffers[i]);
+  }
 }

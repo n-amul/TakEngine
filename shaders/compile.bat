@@ -8,8 +8,8 @@ set GLSLC=C:/VulkanSDK/1.4.313.2/Bin/glslc.exe
 cd /d "%~dp0"
 
 :: Compile each shader to the output directory
-%GLSLC% model.vert -o "model.vert.spv"
-%GLSLC% model.frag -o "model.frag.spv"
+%GLSLC% pbr.vert -o "pbr.vert.spv"
+%GLSLC% pbr.frag -o "pbr.frag.spv"
 
 %GLSLC% skybox.vert -o "skybox.vert.spv"
 %GLSLC% skybox.frag -o "skybox.frag.spv"

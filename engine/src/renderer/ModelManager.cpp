@@ -106,6 +106,51 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   return model;
 }
 
+void ModelManager::updateAnimation(ModelManager::Model &model, int index, float time) {
+  if (model.animations.empty()) {
+    spdlog::info(".glTF does not contain animation.");
+    return;
+  }
+  if (index > static_cast<uint32_t>(model.animations.size()) - 1) {
+    spdlog::info("No animation with index {}", index);
+    return;
+  }
+  tak::Animation &animation = model.animations[index];
+
+  bool updated = false;
+  for (auto &channel : animation.channels) {
+    tak::AnimationSampler &sampler = animation.samplers[channel.samplerIndex];
+    if (sampler.inputs.size() > sampler.outputsVec4.size()) {
+      continue;
+    }
+
+    for (size_t i = 0; i < sampler.inputs.size() - 1; i++) {
+      if ((time >= sampler.inputs[i]) && (time <= sampler.inputs[i + 1])) {
+        float u = std::max(0.0f, time - sampler.inputs[i]) / (sampler.inputs[i + 1] - sampler.inputs[i]);
+        if (u <= 1.0f) {
+          switch (channel.path) {
+            case tak::AnimationChannel::PathType::TRANSLATION:
+              sampler.translate(i, time, channel.node);
+              break;
+            case tak::AnimationChannel::PathType::SCALE:
+              sampler.scale(i, time, channel.node);
+              break;
+            case tak::AnimationChannel::PathType::ROTATION:
+              sampler.rotate(i, time, channel.node);
+              break;
+          }
+          updated = true;
+        }
+      }
+    }
+  }
+  if (updated) {
+    for (auto &node : model.nodes) {
+      node->update();
+    }
+  }
+}
+
 void ModelManager::loadTextures(Model &model, tinygltf::Model &gltfModel) {
   // samplers
   model.textureSamplers = textureManager->loadTextureSamplers(gltfModel);

@@ -6,7 +6,7 @@
 
 class TAK_API ModelScene : public VulkanBase {
  public:
-  ModelScene();
+  ModelScene() {};
   ~ModelScene() = default;
 
  protected:
@@ -14,8 +14,8 @@ class TAK_API ModelScene : public VulkanBase {
   void loadResources() override;
   void createPipeline() override;
   void recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) override;
-  void updateScene(float deltaTime) override {};
-  void cleanupResources() override {};
+  void updateScene(float deltaTime) override;
+  void cleanupResources() override;
   void onResize(int width, int height) override {};
 
  private:
@@ -128,5 +128,5 @@ class TAK_API ModelScene : public VulkanBase {
   void updateUniformData();
   void updateParams();
 
-  void renderNode(tak::Node* node, uint32_t cbIndex, tak::Material::AlphaMode alphaMode);
+  void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t cbIndex, tak::Material::AlphaMode alphaMode);
 };

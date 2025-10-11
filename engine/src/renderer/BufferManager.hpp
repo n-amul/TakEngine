@@ -15,33 +15,41 @@ class BufferManager {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
     VkDevice device = VK_NULL_HANDLE;
-    VkDescriptorBufferInfo descriptor;
+    VkDescriptorBufferInfo descriptor{};
+    void* mapped = nullptr;
+    bool isMapped = false;
 
     Buffer() = default;
     Buffer(VkDevice dev) : device(dev) {}
     // steal the other's resources and other will lose ownership using move() implicitly
-    Buffer(Buffer&& other) noexcept : buffer(other.buffer), memory(other.memory), size(other.size), device(other.device), descriptor(other.descriptor) {
+    Buffer(Buffer&& other) noexcept
+        : buffer(other.buffer), memory(other.memory), size(other.size), device(other.device), descriptor(other.descriptor), mapped(other.mapped), isMapped(other.isMapped) {
       other.buffer = VK_NULL_HANDLE;
       other.memory = VK_NULL_HANDLE;
       other.size = 0;
       other.device = VK_NULL_HANDLE;
       other.descriptor = {};
+      other.mapped = nullptr;
+      other.isMapped = false;
     }
     Buffer& operator=(Buffer&& other) noexcept {
       if (this != &other) {
         cleanup();
-
         buffer = other.buffer;
         memory = other.memory;
         size = other.size;
         device = other.device;
         descriptor = other.descriptor;
+        mapped = other.mapped;
+        isMapped = other.isMapped;
 
         other.buffer = VK_NULL_HANDLE;
         other.memory = VK_NULL_HANDLE;
         other.size = 0;
         other.device = VK_NULL_HANDLE;
         other.descriptor = {};
+        other.mapped = nullptr;
+        other.isMapped = false;
       }
       return *this;
     }
@@ -52,6 +60,11 @@ class BufferManager {
 
    private:
     void cleanup() {
+      if (isMapped) {
+        vkUnmapMemory(device, memory);
+        mapped = nullptr;
+        isMapped = false;
+      }
       if (device != VK_NULL_HANDLE) {
         if (buffer != VK_NULL_HANDLE) {
           vkDestroyBuffer(device, buffer, nullptr);
@@ -74,7 +87,7 @@ class BufferManager {
   BufferManager(std::shared_ptr<VulkanContext> ctx, std::shared_ptr<CommandBufferUtils> cmdUtils) : context(ctx), cmdUtils(cmdUtils) {};
 
   // Create a buffer with specified properties
-  Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties);
+  Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, bool keepMapped = false);
 
   Buffer createGPULocalBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage);
 

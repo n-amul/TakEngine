@@ -223,7 +223,7 @@ void VulkanBase::initVulkan() {
   context->queueFamilyIndex = queueFamilyIndex;
 
   spdlog::info("Creating commandpool...");
-  // 3. Command pools (needed for resource loading)
+  // 3. Command pools (needed before resource loading)
   createCommandPool();
   context->commandPool = commandPool;
   context->transientCommandPool = transientCommandPool;

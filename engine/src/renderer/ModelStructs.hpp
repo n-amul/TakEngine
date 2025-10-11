@@ -179,7 +179,7 @@ struct Mesh {
   BoundingBox bb;
   BoundingBox aabb;
   glm::mat4 matrix;
-  std::vector<glm::mat4> jointMatrix = std::vector<glm::mat4>(MAX_NUM_JOINTS);  // consider not setting the size here
+  std::vector<glm::mat4> jointMatrix = std::vector<glm::mat4>(MAX_NUM_JOINTS);  // consider not setting the size here, can I use vector?
   uint32_t jointcount{0};
   uint32_t index;
   Mesh(glm::mat4 matrix) { this->matrix = matrix; }
