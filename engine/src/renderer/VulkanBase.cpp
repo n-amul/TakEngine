@@ -191,7 +191,7 @@ void VulkanBase::initWindow() {
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
   // Initialize camera
-  camera.initialize(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+  camera.initialize(glm::vec3(-3.0f, -3.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
   // Get initial mouse position
   glfwGetCursorPos(window, &lastX, &lastY);
@@ -920,10 +920,8 @@ void VulkanBase::keyCallback(GLFWwindow* window, int key, int scancode, int acti
         break;
 
       case GLFW_KEY_R:
-        // Reset camera to initial position
-        app->camera.initialize(glm::vec3(3.0f, 3.0f, 3.0f),                              // Z-up position
-                               glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)  // Z-up
-        );
+        // Reset camera to initial position // Z-up
+        app->camera.initialize(glm::vec3(-3.0f, -3.0f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         break;
     }
   }

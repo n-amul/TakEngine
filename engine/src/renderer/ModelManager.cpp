@@ -561,6 +561,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
         const float *bufferColorSet0 = nullptr;
         const void *bufferJoints = nullptr;
         const float *bufferWeights = nullptr;
+        const float *bufferTangent = nullptr;
 
         int posByteStride;
         int normByteStride;
@@ -570,6 +571,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
         int jointByteStride;
         int weightByteStride;
         int jointComponentType;
+        int tanByteStride;
 
         // Position attribute is required
         assert(primitive.attributes.find("POSITION") != primitive.attributes.end());
@@ -628,6 +630,14 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
           weightByteStride =
               weightAccessor.ByteStride(weightView) ? (weightAccessor.ByteStride(weightView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC4);
         }
+        if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
+          const tinygltf::Accessor &tangentAccessor = gltfModel.accessors[primitive.attributes.find("TANGENT")->second];
+          const tinygltf::BufferView &tangentView = gltfModel.bufferViews[tangentAccessor.bufferView];
+          bufferTangent = reinterpret_cast<const float *>(&(gltfModel.buffers[tangentView.buffer].data[tangentAccessor.byteOffset + tangentView.byteOffset]));
+
+          tanByteStride = tangentAccessor.ByteStride(tangentView) ? (tangentAccessor.ByteStride(tangentView) / sizeof(float))
+                                                                  : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC4);  // 4 floats: x,y,z,w
+        }
 
         hasSkin = (bufferJoints && bufferWeights);
 
@@ -638,6 +648,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
           vert.uv0 = bufferTexCoordSet0 ? glm::make_vec2(&bufferTexCoordSet0[v * uv0ByteStride]) : glm::vec3(0.0f);
           vert.uv1 = bufferTexCoordSet1 ? glm::make_vec2(&bufferTexCoordSet1[v * uv1ByteStride]) : glm::vec3(0.0f);
           vert.color = bufferColorSet0 ? glm::make_vec4(&bufferColorSet0[v * color0ByteStride]) : glm::vec4(1.0f);
+          vert.tangent = bufferTangent ? glm::make_vec4(&bufferTangent[v * tanByteStride]) : glm::vec4(1.0f);
 
           if (hasSkin) {
             switch (jointComponentType) {
@@ -778,7 +789,7 @@ void ModelManager::destroyModel(Model &model) {
   model.textureSamplers.resize(0);
 
   for (auto node : model.nodes) {
-    delete node;
+    delete node;  // children nodes deletes recursively
   }
   model.materials.resize(0);
   model.animations.resize(0);

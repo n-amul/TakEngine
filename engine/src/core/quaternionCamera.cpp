@@ -3,7 +3,7 @@
 #include <algorithm>
 
 QuaternionCamera::QuaternionCamera()
-    : position(3.0f, 3.0f, 3.0f),
+    : position(-3.0f, -3.0f, 3.0f),
       orientation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f))  // Identity quaternion
       ,
       worldUp(0.0f, 0.0f, 1.0f)  // Z-up world

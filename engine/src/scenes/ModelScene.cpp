@@ -33,16 +33,24 @@ void ModelScene::updateUniformData() {
   uboMatrices.projection = camera.getProjectionMatrix(aspectRatio);
   uboMatrices.view = camera.getViewMatrix();
 
-  // Center and scale model
+  // Center and scale model, TODO: move to z-up coord
   float scale = (1.0f / std::max(scene.aabb[0][0], std::max(scene.aabb[1][1], scene.aabb[2][2]))) * 0.5f;
   glm::vec3 translate = -glm::vec3(scene.aabb[3][0], scene.aabb[3][1], scene.aabb[3][2]);
   translate += -0.5f * glm::vec3(scene.aabb[0][0], scene.aabb[1][1], scene.aabb[2][2]);
 
   uboMatrices.model = glm::mat4(1.0f);
+  // Apply scaling
   uboMatrices.model[0][0] = scale;
   uboMatrices.model[1][1] = scale;
   uboMatrices.model[2][2] = scale;
+  // Apply translation
   uboMatrices.model = glm::translate(uboMatrices.model, translate);
+
+  // Convert from Y-up to Z-up by rotating -90 degrees around X axis
+  // This maps: Y -> Z, Z -> -Y
+  glm::mat4 yUpToZUp = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+  uboMatrices.model = yUpToZUp * uboMatrices.model;
+
   // Shader requires camera position in world space
   glm::mat4 cv = glm::inverse(camera.getViewMatrix());
   uboMatrices.camPos = glm::vec3(cv[3]);
@@ -174,7 +182,7 @@ void ModelScene::createMeshDataBuffer() {
   for (auto& shaderMeshDataBuffer : shaderMeshDataBuffers) {
     VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
     shaderMeshDataBuffer =
-        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     bufferManager->updateBuffer(shaderMeshDataBuffer, shaderMeshData.data(), bufferSize, 0);
     // Update descriptor
     shaderMeshDataBuffer.descriptor.buffer = shaderMeshDataBuffer.buffer;
@@ -594,12 +602,27 @@ void ModelScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no 
 
 void ModelScene::cleanupResources() {
   spdlog::info("Cleaning up model resources");
+  vkDeviceWaitIdle(device);
+  // Destroy buffers
+  for (auto& ub : uniformBuffers) {
+    bufferManager->destroyBuffer(ub.scene);
+    bufferManager->destroyBuffer(ub.params);
+  }
+  for (auto& buf : shaderMeshDataBuffers) bufferManager->destroyBuffer(buf);
+  bufferManager->destroyBuffer(shaderMaterialBuffer);
+
+  // Destroy descriptor layouts and pool
+  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.material, nullptr);
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.materialBuffer, nullptr);
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.meshDataBuffer, nullptr);
+
+  // Destroy pipeline and layout
+  vkDestroyPipeline(device, modelPipeline, nullptr);
+  vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
+  // Destroy textures and model
   textureManager->destroyTexture(emptyTexture);
   modelManager->destroyModel(scene);
-  bufferManager->destroyBuffer(shaderMaterialBuffer);
-  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    bufferManager->destroyBuffer(uniformBuffers[i].params);
-    bufferManager->destroyBuffer(uniformBuffers[i].scene);
-    bufferManager->destroyBuffer(shaderMeshDataBuffers[i]);
-  }
 }

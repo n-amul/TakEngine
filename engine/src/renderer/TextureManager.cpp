@@ -451,10 +451,11 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
 
   // Create sampler based on textureSampler parameter
   texture.sampler = createTextureSampler(textureSampler, static_cast<float>(texture.mipLevels));
-
+  // descriptor
   texture.descriptor.imageLayout = texture.currentLayout;
   texture.descriptor.imageView = texture.imageView;
   texture.descriptor.sampler = texture.sampler;
+
   return texture;
 }
 
@@ -918,6 +919,8 @@ TextureManager::Texture TextureManager::createDefault() {
 
   // Transition to shader read
   transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+  // Update current layout after transition
+  texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
   cmdUtils->endSingleTimeCommands(commandBuffer);
 
