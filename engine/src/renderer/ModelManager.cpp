@@ -510,8 +510,8 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
   newNode->parent = parent;
   newNode->name = node.name;
   newNode->skinIndex = node.skin;
-  newNode->matrix = glm::mat4(1.0f);
 
+  newNode->matrix = glm::mat4(1.0f);
   // Generate local node matrix
   glm::vec3 translation = glm::vec3(0.0f);
   if (node.translation.size() == 3) {
@@ -540,6 +540,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
   }
 
   if (node.mesh > -1) {
+    spdlog::info("Node '{}' has mesh index {}", node.name, node.mesh);
     const tinygltf::Mesh mesh = gltfModel.meshes[node.mesh];
     tak::Mesh *newMesh = new tak::Mesh(newNode->matrix);
     for (size_t i = 0; i < mesh.primitives.size(); i++) {
@@ -716,9 +717,11 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
             spdlog::error("Index component type {} not supported", accessor.componentType);
             return;
         }
+        spdlog::info("Primitive for mesh {}: vertexStart={}, indexStart={}, indexCount={}, vertexCount={}", mesh.name, vertexStart, indexStart, indexCount, vertexCount);
       }
-      tak::Primitive *newPrimitive =
-          new tak::Primitive(indexStart, indexCount, vertexCount, primitive.material > -1 ? model.materials[primitive.material] : model.materials.back());
+
+      uint32_t materialIndex = primitive.material > -1 ? primitive.material : static_cast<uint32_t>(model.materials.size() - 1);
+      tak::Primitive *newPrimitive = new tak::Primitive(indexStart, indexCount, vertexCount, materialIndex);
       newPrimitive->setBoundingBox(posMin, posMax);
       newMesh->primitives.push_back(newPrimitive);
     }
@@ -732,6 +735,9 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
       newMesh->bb.max = glm::max(newMesh->bb.max, p->bb.max);
     }
     newNode->mesh = newMesh;
+    spdlog::info("Assigned mesh to node '{}' with {} primitives", node.name, newMesh->primitives.size());
+  } else {
+    spdlog::info("Node '{}' has no mesh (index: {})", node.name, node.mesh);
   }
 
   if (parent) {

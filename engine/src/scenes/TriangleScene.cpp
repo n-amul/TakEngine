@@ -335,12 +335,10 @@ void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t
   VkRect2D scissor{};
   scissor.offset = {0, 0};
   scissor.extent = swapChainExtent;
-
-  // 1. Render skybox first (with depth test but no depth write)
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
+  // 1. Render skybox first (with depth test but no depth write)
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
   VkBuffer skyboxVertexBuffers[] = {skyboxVertexBuffer.buffer};
   VkDeviceSize offsets[] = {0};
   vkCmdBindVertexBuffers(commandBuffer, 0, 1, skyboxVertexBuffers, offsets);
@@ -737,14 +735,5 @@ void TriangleScene::updateSkyboxUniformBuffer() {
 }
 
 void TriangleScene::createSkyboxTexture() {
-  // std::array<std::string, 6> faceFilepaths = {
-  //     std::string(TEXTURE_DIR) + "/skybox/right.png",   // +X
-  //     std::string(TEXTURE_DIR) + "/skybox/left.png",    // -X
-  //     std::string(TEXTURE_DIR) + "/skybox/top.png",     // +Y
-  //     std::string(TEXTURE_DIR) + "/skybox/bottom.png",  // -Y
-  //     std::string(TEXTURE_DIR) + "/skybox/front.png",   // +Z
-  //     std::string(TEXTURE_DIR) + "/skybox/back.png"     //-Z
-  // };
-  // skyboxTexture = textureManager->createCubemapFromFiles(faceFilepaths);
   skyboxTexture = textureManager->createCubemapFromSingleFile(std::string(TEXTURE_DIR) + "/skybox/cubemap.png", VK_FORMAT_R8G8B8A8_SRGB);
 }

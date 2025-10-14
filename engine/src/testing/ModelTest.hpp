@@ -19,7 +19,7 @@ class TAK_API ModelTest : public VulkanBase {
   void updateScene(float deltaTime) override;
 
  private:
-  std::unique_ptr<ModelManager> modelManager;
   ModelManager::Model testModel;
   std::string modelFilePath;
+  void printNodeHierarchy(tak::Node* node, int depth);
 };

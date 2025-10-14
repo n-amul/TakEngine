@@ -167,11 +167,11 @@ struct Primitive {
   uint32_t firstIndex;
   uint32_t indexCount;
   uint32_t vertexCount;
-  Material& material;
+  uint32_t materialIndex;
   bool hasIndices;
   BoundingBox bb;
-  Primitive(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, Material& material)
-      : firstIndex(firstIndex), indexCount(indexCount), vertexCount(vertexCount), material(material) {
+  Primitive(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, uint32_t materialIndex)
+      : firstIndex(firstIndex), indexCount(indexCount), vertexCount(vertexCount), materialIndex(materialIndex) {
     hasIndices = indexCount > 0;
   }
   void setBoundingBox(glm::vec3 min, glm::vec3 max) {

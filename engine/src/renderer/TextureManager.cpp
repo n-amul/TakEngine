@@ -888,10 +888,16 @@ TextureManager::Texture TextureManager::createDefault() {
   // Create a small white texture to use as default
   const uint32_t width = 4;
   const uint32_t height = 4;
-  VkDeviceSize imageSize = width * height * 4;  // RGBA
+  VkDeviceSize imageSize = width * height * 4;
 
-  // Create white pixel data
-  std::vector<uint8_t> pixels(imageSize, 255);  // All white
+  // Create red pixel data
+  std::vector<uint8_t> pixels(imageSize);
+  for (uint32_t i = 0; i < width * height; ++i) {
+    pixels[i * 4 + 0] = 255;  // R
+    pixels[i * 4 + 1] = 0;    // G
+    pixels[i * 4 + 2] = 0;    // B
+    pixels[i * 4 + 3] = 255;  // A
+  }
 
   // Create staging buffer
   BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(imageSize);

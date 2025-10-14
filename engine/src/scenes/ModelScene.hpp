@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "renderer/VulkanBase.hpp"
@@ -110,6 +111,8 @@ class TAK_API ModelScene : public VulkanBase {
 
   TextureManager::Texture emptyTexture;  // White 1x1 texture
 
+  std::unordered_set<tak::Node*> visitedNodes;
+
   // ============= Animation =============
   int32_t animationIndex = 0;
   float animationTimer = 0.0f;
@@ -129,4 +132,14 @@ class TAK_API ModelScene : public VulkanBase {
   void updateParams();
 
   void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t cbIndex, tak::Material::AlphaMode alphaMode);
+
+  // skybox
+  void createSkyboxPipeline();
+  void createSkyboxVertexBuffer();
+  void createSkyboxIndexBuffer();
+  void createSkyboxDescriptorSetLayout();
+  void createSkyboxUniformBuffers();
+  void updateSkyboxUniformBuffer();
+  void createSkyboxTexture();
+  void createSkyboxDescriptorSets();
 };
