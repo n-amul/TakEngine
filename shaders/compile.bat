@@ -17,5 +17,8 @@ cd /d "%~dp0"
 %GLSLC% triangle.vert -o "triangle.vert.spv"
 %GLSLC% triangle.frag -o "triangle.frag.spv"
 
+%GLSLC% ui.vert -o "ui.vert.spv"
+%GLSLC% ui.frag -o "ui.frag.spv"
+
 echo Done.
 pause

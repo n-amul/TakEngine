@@ -238,12 +238,14 @@ void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
     }
 
     // Check for KHR_materials_unlit extension
+
     if (mat.extensions.find("KHR_materials_unlit") != mat.extensions.end()) {
+      spdlog::info("unlit");
       material.unlit = true;
     }
-
     // Check for KHR_materials_pbrSpecularGlossiness extension (alternative workflow)
     if (mat.extensions.find("KHR_materials_pbrSpecularGlossiness") != mat.extensions.end()) {
+      spdlog::info("KHR_materials_pbrSpecularGlossiness");
       auto ext = mat.extensions.find("KHR_materials_pbrSpecularGlossiness");
       if (ext->second.Has("specularGlossinessTexture")) {
         auto index = ext->second.Get("specularGlossinessTexture").Get("index");

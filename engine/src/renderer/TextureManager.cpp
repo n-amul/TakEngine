@@ -504,6 +504,52 @@ std::vector<TextureManager::TextureSampler> TextureManager::loadTextureSamplers(
   }
   return samplers;
 }
+TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint32_t size, VkFormat format, uint32_t width, uint32_t height) {
+  Texture texture;
+  // Create staging buffer
+  BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(size);
+  // Copy pixel data to staging buffer
+  void* dst;
+  vkMapMemory(context->device, stagingBuffer.memory, 0, size, 0, &dst);
+  memcpy(dst, data, static_cast<size_t>(size));
+  vkUnmapMemory(context->device, stagingBuffer.memory);
+
+  // Initialize texture
+  texture.device = context->device;
+  InitTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+  // Transition image layout and copy buffer to image
+  VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
+  // Transition to transfer destination
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, commandBuffer);
+  // Copy buffer to image
+  VkExtent3D copyExtent = {width, height, 1};
+  copyBufferToImage(texture, stagingBuffer.buffer, commandBuffer, 0, 0, copyExtent);
+  // Transition to shader read
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+  // Update current layout after transition
+  texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  cmdUtils->endSingleTimeCommands(commandBuffer);
+
+  // Create image view
+  texture.imageView = createImageView(texture.image, format);
+
+  // Create default sampler
+  TextureSampler samplerInfo{};
+  samplerInfo.magFilter = VK_FILTER_LINEAR;
+  samplerInfo.minFilter = VK_FILTER_LINEAR;
+  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // for fonts
+  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+  texture.sampler = createTextureSampler(samplerInfo);
+  // descriptor
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
+
+  return texture;
+}
 // cube map
 void TextureManager::InitCubemapTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
                                         VkMemoryPropertyFlags properties, uint32_t mipLevels) {

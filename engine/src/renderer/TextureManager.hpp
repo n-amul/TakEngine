@@ -150,12 +150,11 @@ class TextureManager {
     VkSamplerAddressMode addressModeW;
   };
   Texture createDefault();
-
- private:
   std::shared_ptr<VulkanContext> context;
   std::shared_ptr<CommandBufferUtils> cmdUtils;
   std::shared_ptr<BufferManager> bufferManager;
 
+ private:
   // consider to cache textures here for switching scenes
   // std::unordered_map<std::string, Texture> loadedTextures;
 
@@ -179,6 +178,7 @@ class TextureManager {
   Texture createTextureFromGLTFImage(const tinygltf::Image& gltfImage, std::string path, TextureSampler textureSampler, VkQueue copyQueue);
   std::vector<TextureSampler> loadTextureSamplers(tinygltf::Model& gltfModel);
   // std::vector<Texture> loadTextures(tinygltf::Model& gltfModel, std::vector<TextureSampler>& samplers);
+  Texture createTextureFromBuffer(void* data, uint32_t size, VkFormat format, uint32_t width, uint32_t height);
 
   // cube map
   Texture createCubemapFromFiles(const std::array<std::string, 6>& faceFilepaths, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);

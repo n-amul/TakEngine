@@ -44,11 +44,11 @@ class TAK_API VulkanBase {
   virtual void onResize(int width, int height) {}
   virtual void onKeyEvent(int key, int scancode, int action, int mods) {}  // Optional key handling
   virtual void onMouseMove(double xpos, double ypos) {}                    // Optional mouse handling
+  virtual void onMouseButton(int button, int action, int mods) {};
 
   virtual void initWindow();
   virtual void initVulkan();
 
-  // Helper functions accessible to derived classes
   VkShaderModule createShaderModule(const std::vector<char>& code);
 
   // Main loop and drawing

@@ -19,16 +19,17 @@ layout(set = 0, binding = 0) uniform UBOMatrices {
     vec3 camPos;
 } ubo;
 
-// Mesh data SSBO - using single struct to avoid dynamic indexing issues
-struct MeshData {
+#define MAX_NUM_JOINTS 64
+
+struct MeshDataBlock {
     mat4 matrix;
-    mat4 jointMatrix[64]; // MAX_NUM_JOINTS
+    mat4 jointMatrix[MAX_NUM_JOINTS];
     uint jointcount;
     uint padding[3];
 };
 
 layout(set = 2, binding = 0) readonly buffer MeshDataBuffer {
-    MeshData meshData[];
+    MeshDataBlock meshData[];
 } meshBuffer;
 
 // Push constants

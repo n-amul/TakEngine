@@ -895,7 +895,7 @@ void VulkanBase::processInput(float deltaTime) {
   if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
     camera.setSpeed(10.0f);  // Fast movement
   else
-    camera.setSpeed(5.0f);  // Normal movement
+    camera.setSpeed(0.5f);  // Normal movement
 }
 
 // Static callback implementations
@@ -974,4 +974,5 @@ void VulkanBase::mouseButtonCallback(GLFWwindow* window, int button, int action,
   if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS) {
     app->camera.setFov(45.0f);
   }
+  app->onMouseButton(button, action, mods);
 }

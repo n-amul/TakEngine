@@ -8,7 +8,7 @@ QuaternionCamera::QuaternionCamera()
       ,
       worldUp(0.0f, 0.0f, 1.0f)  // Z-up world
       ,
-      movementSpeed(5.0f),
+      movementSpeed(0.5f),
       mouseSensitivity(0.002f),
       rollSpeed(1.0f),
       fov(glm::radians(45.0f)),

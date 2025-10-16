@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "renderer/VulkanBase.hpp"
+#include "renderer/ui.hpp"
 
 class TAK_API ModelScene : public VulkanBase {
  public:
@@ -31,7 +32,7 @@ class TAK_API ModelScene : public VulkanBase {
   // ============= Uniform Data Structures =============
   struct alignas(16) ShaderValuesParams {
     glm::vec4 lightDir;
-    float exposure = 4.5f;
+    float exposure = 1.0f;
     float gamma = 2.2f;
     float _padding[2];
     // For now remove: prefilteredCubeMipLevels, scaleIBLAmbient (IBL-specific)
@@ -103,10 +104,9 @@ class TAK_API ModelScene : public VulkanBase {
     int32_t materialIndex;
   };
   // Pipeline
+  VkPipelineCache pipelineCache;
   VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
-  // Single pipeline for now
-  VkPipeline modelPipeline = VK_NULL_HANDLE;
-
+  std::unordered_map<std::string, VkPipeline> pipelines;
   VkPipeline boundPipeline{VK_NULL_HANDLE};  // Track current bound pipeline
 
   TextureManager::Texture emptyTexture;  // White 1x1 texture
@@ -116,7 +116,7 @@ class TAK_API ModelScene : public VulkanBase {
   // ============= Animation =============
   int32_t animationIndex = 0;
   float animationTimer = 0.0f;
-  bool animate = true;
+  bool animate = false;
 
   // ============= defines =============
   enum PBRWorkflows { PBR_WORKFLOW_METALLIC_ROUGHNESS = 0, PBR_WORKFLOW_SPECULAR_GLOSSINESS = 1 };
@@ -125,7 +125,7 @@ class TAK_API ModelScene : public VulkanBase {
   void setupDescriptors();
   void createMaterialBuffer();
   void createMeshDataBuffer();
-  void createModelPipeline();
+  void createModelPipeline(const std::string& prefix);
   void updateMeshDataBuffer(uint32_t index);
   void prepareUniformBuffers();
   void updateUniformData();

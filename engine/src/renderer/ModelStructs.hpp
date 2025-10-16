@@ -13,7 +13,7 @@
 #include "renderer/TextureManager.hpp"
 #include "renderer/VulkanContext.hpp"
 
-#define MAX_NUM_JOINTS 64u
+#define MAX_NUM_JOINTS 128u
 
 namespace tak {
 struct Vertex {

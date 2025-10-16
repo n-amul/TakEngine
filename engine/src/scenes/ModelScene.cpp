@@ -1,8 +1,6 @@
 #include "ModelScene.hpp"
 
 #include "core/utils.hpp"
-// TODO: check loading nodes
-// check shader
 
 void ModelScene::loadResources() {
   // load skybox
@@ -15,18 +13,16 @@ void ModelScene::loadResources() {
   emptyTexture = textureManager->createDefault();
   // load scene
   scene = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/underwater_explorer/scene.gltf");
-  spdlog::info("Scene has {} root nodes and {} total linear nodes", scene.nodes.size(), scene.linearNodes.size());
-  for (auto& node : scene.linearNodes) {
-    if (node->mesh) {
-      spdlog::info("  Node '{}' has mesh", node->name);
-    }
-  }
   createMaterialBuffer();
   createMeshDataBuffer();
 
   prepareUniformBuffers();
   setupDescriptors();
   createSkyboxDescriptorSets();
+  shaderValuesParams.lightDir = glm::vec4(1.0f, -1.0f, 5.0f, 0.0f);
+  shaderValuesParams.exposure = 1.0f;
+  shaderValuesParams.gamma = 2.2f;
+  updateParams();
 }
 
 void ModelScene::prepareUniformBuffers() {
@@ -95,8 +91,7 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
             pipelineVariant = "_double_sided";
           }
         }
-
-        const VkPipeline pipeline = modelPipeline;  // single pipeline for now
+        const VkPipeline pipeline = pipelines[pipelineName + pipelineVariant];
 
         if (boundPipeline != pipeline) {
           vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -131,7 +126,9 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
 void ModelScene::createMaterialBuffer() {
   std::vector<ShaderMaterial> shaderMaterials{};
 
-  for (tak::Material& material : scene.materials) {
+  for (size_t i = 0; i < scene.materials.size(); i++) {
+    tak::Material& material = scene.materials[i];
+    material.materialIndex = i;
     ShaderMaterial shaderMaterial{};
 
     shaderMaterial.emissiveFactor = material.emissiveFactor;
@@ -180,24 +177,36 @@ void ModelScene::createMaterialBuffer() {
 // The vertex shader then get's the index into this buffer from a push constant set per mesh
 void ModelScene::createMeshDataBuffer() {
   shaderMeshDataBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-  std::vector<ShaderMeshData> shaderMeshData{};
-
+  // Assign indices to all meshes in the scene
   uint32_t meshIndex = 0;
-  for (auto& node : scene.linearNodes) {
+  std::function<void(tak::Node*)> assignMeshIndices = [&](tak::Node* node) {
     if (node->mesh) {
-      ShaderMeshData meshData{};
+      node->mesh->index = meshIndex++;
+    }
+    for (auto& child : node->children) {
+      assignMeshIndices(child);
+    }
+  };
+  // Assign indices to ALL meshes
+  for (auto& node : scene.nodes) {
+    assignMeshIndices(node);
+  }
+  std::map<uint32_t, ShaderMeshData> meshDataMap;
+  for (auto& node : scene.linearNodes) {
+    ShaderMeshData meshData{};
+    if (node->mesh) {
       memcpy(meshData.jointMatrix, node->mesh->jointMatrix.data(), sizeof(glm::mat4) * MAX_NUM_JOINTS);
       meshData.jointcount = node->mesh->jointcount;
       meshData.matrix = node->mesh->matrix;
-      shaderMeshData.push_back(meshData);
-
-      // Set the index here to match the position in shaderMeshData
-      node->mesh->index = meshIndex++;
+      meshDataMap[node->mesh->index] = meshData;
     }
   }
-  spdlog::info("Total mesh data entries: {}", shaderMeshData.size());
-
+  // Convert map to vector in index order
+  std::vector<ShaderMeshData> shaderMeshData(meshDataMap.size());
+  for (const auto& [idx, data] : meshDataMap) {
+    shaderMeshData[idx] = data;
+  }
+  // create buffers
   for (auto& shaderMeshDataBuffer : shaderMeshDataBuffers) {
     VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
     shaderMeshDataBuffer =
@@ -229,8 +238,8 @@ void ModelScene::setupDescriptors() {
       meshCount++;
     }
   }
-  // (param + mvp) * each frames
-  // texture samplers (shared)
+  // ubo: (param + mvp) * each frames +skybox
+  // texture samplers (shared) + skybox
   // material buffer(1,shared) + mesh data(2 perframe)
   uint32_t skyboxCount = MAX_FRAMES_IN_FLIGHT;
   std::vector<VkDescriptorPoolSize> poolSizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<u32>(2 * MAX_FRAMES_IN_FLIGHT + skyboxCount)},
@@ -417,10 +426,12 @@ void ModelScene::createPipeline() {
   spdlog::info("creating cubemap pipeline...");
   createSkyboxPipeline();
   spdlog::info("creating Model pipeline...");
-  createModelPipeline();
+  createModelPipeline("pbr");
+  // TODO: important // create KHR_materials_unlit pipeline
 }
 
 void ModelScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+  boundPipeline = VK_NULL_HANDLE;
   // Note: Render pass is already begun in base class recordCommandBuffer()
   // Just need to bind pipeline and draw
   VkViewport viewport{};
@@ -446,16 +457,25 @@ void ModelScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t im
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(skyboxIndices.size()), 1, 0, 0, 0);
 
   // scene render
+  boundPipeline = VK_NULL_HANDLE;
   VkDeviceSize offsets_scene[] = {0};
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, modelPipeline);
   vkCmdBindVertexBuffers(commandBuffer, 0, 1, &scene.vertices.buffer, offsets_scene);
   if (scene.indices.buffer != VK_NULL_HANDLE) {
     vkCmdBindIndexBuffer(commandBuffer, scene.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
   }
-  boundPipeline = VK_NULL_HANDLE;
-  //
+
+  // Opaque primitives first
   for (auto node : scene.nodes) {
     renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_OPAQUE);
+  }
+  // Alpha masked primitives
+  for (auto node : scene.nodes) {
+    renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_MASK);
+  }
+  // Transparent primitives
+  // TODO: Correct depth sorting
+  for (auto node : scene.nodes) {
+    renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_BLEND);
   }
 }
 
@@ -463,9 +483,11 @@ void ModelScene::updateScene(float deltaTime) {
   updateSkyboxUniformBuffer();
   // Update UBOs
   updateUniformData();
+  updateParams();
   // update shader buffer (TODO: add mapped pointer inside the buffer for performance)
   bufferManager->updateBuffer(uniformBuffers[currentFrame].scene, &uboMatrices, sizeof(uboMatrices), 0);
   bufferManager->updateBuffer(uniformBuffers[currentFrame].params, &shaderValuesParams, sizeof(shaderValuesParams), 0);
+
   // update animation and params
   if ((animate) && (scene.animations.size() > 0)) {
     animationTimer += deltaTime;
@@ -475,10 +497,9 @@ void ModelScene::updateScene(float deltaTime) {
     modelManager->updateAnimation(scene, animationIndex, animationTimer);
     updateMeshDataBuffer(currentFrame);
   }
-  updateParams();
 }
 
-void ModelScene::createModelPipeline() {
+void ModelScene::createModelPipeline(const std::string& prefix) {
   // Load shaders
   std::string vertPath = std::string(SHADER_DIR) + "/pbr.vert.spv";
   std::string fragPath = std::string(SHADER_DIR) + "/pbr.frag.spv";
@@ -603,32 +624,59 @@ void ModelScene::createModelPipeline() {
   pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
   pipelineInfo.basePipelineIndex = -1;
 
-  if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &modelPipeline) != VK_SUCCESS) {
+  VkPipeline pipeline{};
+  // TODO: add cache later
+  //  Default pipeline with back-face culling
+  if (vkCreateGraphicsPipelines(device, nullptr, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
     throw std::runtime_error("Failed to create graphics pipeline!");
   }
+  pipelines[prefix] = pipeline;
+  // Double sided
+  rasterizer.cullMode = VK_CULL_MODE_NONE;
+  if (vkCreateGraphicsPipelines(device, nullptr, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create graphics pipeline!");
+  }
+  pipelines[prefix + "_double_sided"] = pipeline;
+
+  // Alpha blending
+  rasterizer.cullMode = VK_CULL_MODE_NONE;
+  blendAttachmentState.blendEnable = VK_TRUE;
+  blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+  blendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  blendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+  blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+  blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+  if (vkCreateGraphicsPipelines(device, nullptr, 1, &pipelineInfo, nullptr, &pipeline)) {
+    throw std::runtime_error("Failed to create graphics pipeline!");
+  }
+  pipelines[prefix + "_alpha_blending"] = pipeline;
 
   // Cleanup shader modules
-  vkDestroyShaderModule(device, fragShaderModule, nullptr);
-  vkDestroyShaderModule(device, vertShaderModule, nullptr);
-  // TODO: add Double sided, alpha blending pipelines
-
+  for (auto shaderStage : shaderStages) {
+    vkDestroyShaderModule(device, shaderStage.module, nullptr);
+  }
   spdlog::info("Model pipeline created successfully");
 }
 
 void ModelScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no push, use fixed size)
-  std::vector<ShaderMeshData> shaderMeshData{};
+  std::vector<ShaderMeshData> shaderMeshData;
+  std::map<uint32_t, ShaderMeshData> meshDataMap;
   for (auto& node : scene.linearNodes) {
-    ShaderMeshData meshData{};
     if (node->mesh) {
-      memcpy(meshData.jointMatrix, &node->mesh->jointMatrix, sizeof(glm::mat4) * MAX_NUM_JOINTS);
+      ShaderMeshData meshData{};
+      memcpy(meshData.jointMatrix, node->mesh->jointMatrix.data(), sizeof(glm::mat4) * MAX_NUM_JOINTS);
       meshData.jointcount = node->mesh->jointcount;
       meshData.matrix = node->mesh->matrix;
-      shaderMeshData.push_back(meshData);
+      meshDataMap[node->mesh->index] = meshData;
     }
   }
-
+  // Convert map to vector in correct order
+  for (const auto& [idx, data] : meshDataMap) {
+    shaderMeshData.push_back(data);
+  }
   VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
-  // Update the buffer for the current frame
   bufferManager->updateBuffer(shaderMeshDataBuffers[index], shaderMeshData.data(), bufferSize, 0);
 }
 
@@ -671,7 +719,9 @@ void ModelScene::cleanupResources() {
   vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.meshDataBuffer, nullptr);
 
   // Destroy pipeline and layout
-  vkDestroyPipeline(device, modelPipeline, nullptr);
+  for (auto p : pipelines) {
+    vkDestroyPipeline(device, p.second, nullptr);
+  }
   vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 
   // Destroy textures and model
@@ -857,6 +907,7 @@ void ModelScene::createSkyboxUniformBuffers() {
   skyboxUniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    // change to mapped = true
     skyboxUniformBuffers[i] =
         bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkMapMemory(device, skyboxUniformBuffers[i].memory, 0, bufferSize, 0, &skyboxUniformBuffersMapped[i]);

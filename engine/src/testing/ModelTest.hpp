@@ -21,5 +21,5 @@ class TAK_API ModelTest : public VulkanBase {
  private:
   ModelManager::Model testModel;
   std::string modelFilePath;
-  void printNodeHierarchy(tak::Node* node, int depth);
+  void printNodeHierarchy(tak::Node* node, int depth, int& printCount);
 };
