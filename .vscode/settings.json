@@ -94,7 +94,7 @@
     "[c]": {
         "editor.defaultFormatter": "ms-vscode.cpptools"
     },
-    "C_Cpp.clang_format_style": "{ BasedOnStyle: Google, ColumnLimit: 175 }",
+    "C_Cpp.clang_format_style": "{ BasedOnStyle: Google, ColumnLimit: 70 }",
     "C_Cpp.clang_format_fallbackStyle": "Google",
     "editor.formatOnSave": true,
 }
