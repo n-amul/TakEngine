@@ -34,8 +34,7 @@ class TAK_API ModelScene : public VulkanBase {
     glm::vec4 lightDir;
     float exposure = 1.0f;
     float gamma = 2.2f;
-    float _padding[2];
-    // For now remove: prefilteredCubeMipLevels, scaleIBLAmbient (IBL-specific)
+    glm::vec3 ambientLight = glm::vec3(0.01);
   } shaderValuesParams;
 
   // Scene matrices (per-frame UBO)
@@ -44,7 +43,6 @@ class TAK_API ModelScene : public VulkanBase {
     glm::mat4 model;
     glm::mat4 view;
     glm::vec3 camPos;
-    float _padding;
   } uboMatrices;
 
   // ============= Buffers =============
@@ -71,15 +69,13 @@ class TAK_API ModelScene : public VulkanBase {
     float alphaMask;
     float alphaMaskCutoff;
     float emissiveStrength;
-    float _padding;
   };
   BufferManager::Buffer shaderMaterialBuffer;
   // Mesh data SSBO (per-mesh transforms, skinning)
   struct alignas(16) ShaderMeshData {
     glm::mat4 matrix;
     glm::mat4 jointMatrix[MAX_NUM_JOINTS];
-    uint32_t jointcount;
-    uint32_t _padding[3];
+    uint32_t jointCount;
   };
   std::vector<BufferManager::Buffer> shaderMeshDataBuffers;  // One per frame
   // ============= Descriptors =============
@@ -116,7 +112,7 @@ class TAK_API ModelScene : public VulkanBase {
   // ============= Animation =============
   int32_t animationIndex = 0;
   float animationTimer = 0.0f;
-  bool animate = false;
+  bool animate = true;
 
   // ============= defines =============
   enum PBRWorkflows { PBR_WORKFLOW_METALLIC_ROUGHNESS = 0, PBR_WORKFLOW_SPECULAR_GLOSSINESS = 1 };

@@ -1,7 +1,5 @@
 #version 450
-#extension GL_EXT_nonuniform_qualifier : require
 
-// Vertex attributes (from tak::Vertex)
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV0;
@@ -11,83 +9,69 @@ layout(location = 5) in vec4 inWeight0;
 layout(location = 6) in vec4 inColor0;
 layout(location = 7) in vec4 inTangent;
 
+
 // Uniform buffers
-layout(set = 0, binding = 0) uniform UBOMatrices {
+layout(set = 0, binding = 0) uniform UBO {
     mat4 projection;
     mat4 model;
     mat4 view;
     vec3 camPos;
 } ubo;
 
-#define MAX_NUM_JOINTS 64
+#define MAX_NUM_JOINTS 128
 
 struct MeshDataBlock {
     mat4 matrix;
     mat4 jointMatrix[MAX_NUM_JOINTS];
-    uint jointcount;
-    uint padding[3];
+    uint jointCount;
 };
 
-layout(set = 2, binding = 0) readonly buffer MeshDataBuffer {
+layout(set = 2, binding = 0) readonly buffer SSBO {
     MeshDataBlock meshData[];
-} meshBuffer;
+};
 
-// Push constants
-layout(push_constant) uniform PushConsts {
-    int meshIndex;
-    int materialIndex;
-} pushConsts;
+layout (push_constant) uniform PushConstants {
+	int meshIndex;
+	int materialIndex;
+} pushConstants;
 
 // Outputs to fragment shader
-layout(location = 0) out vec3 outWorldPos;
-layout(location = 1) out vec3 outNormal;
-layout(location = 2) out vec2 outUV0;
-layout(location = 3) out vec2 outUV1;
-layout(location = 4) out vec4 outColor;
+layout (location = 0) out vec3 outWorldPos;
+layout (location = 1) out vec3 outNormal;
+layout (location = 2) out vec2 outUV0;
+layout (location = 3) out vec2 outUV1;
+layout (location = 4) out vec4 outColor0;
 layout(location = 5) out vec4 outTangent;
 
+
 void main() {
+    outColor0 = inColor0;
+
     vec4 locPos;
+    mat4 modelMatrix;
     
-    // Access mesh data using push constant index
-    int idx = pushConsts.meshIndex;
-    mat4 meshMatrix = meshBuffer.meshData[idx].matrix;
-    uint jointCount = meshBuffer.meshData[idx].jointcount;
-    
-    // Skinning
-    if (jointCount > 0u) {
-        // Calculate skinned position
+    if (meshData[pushConstants.meshIndex].jointCount > 0) {
+        // Mesh is skinned
         mat4 skinMat = 
-            inWeight0.x * meshBuffer.meshData[idx].jointMatrix[int(inJoint0.x)] +
-            inWeight0.y * meshBuffer.meshData[idx].jointMatrix[int(inJoint0.y)] +
-            inWeight0.z * meshBuffer.meshData[idx].jointMatrix[int(inJoint0.z)] +
-            inWeight0.w * meshBuffer.meshData[idx].jointMatrix[int(inJoint0.w)];
-            
-        locPos = meshMatrix * skinMat * vec4(inPos, 1.0);
-        
-        // Transform normal with skinning
-        mat3 normalMatrix = transpose(inverse(mat3(ubo.model * meshMatrix * skinMat)));
-        outNormal = normalize(normalMatrix * inNormal);
-        
-        // Transform tangent
-        outTangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
+            inWeight0.x * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.x] +
+            inWeight0.y * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.y] +
+            inWeight0.z * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.z] +
+            inWeight0.w * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.w];
+
+        modelMatrix = ubo.model * meshData[pushConstants.meshIndex].matrix * skinMat;
+        locPos = modelMatrix * vec4(inPos, 1.0);
     } else {
-        // No skinning
-        locPos = meshMatrix * vec4(inPos, 1.0);
-        
-        mat3 normalMatrix = transpose(inverse(mat3(ubo.model * meshMatrix)));
-        outNormal = normalize(normalMatrix * inNormal);
-        outTangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
+        modelMatrix = ubo.model * meshData[pushConstants.meshIndex].matrix;
+        locPos = modelMatrix * vec4(inPos, 1.0);
     }
     
-    // World space position
-    outWorldPos = vec3(ubo.model * locPos);
+    // CORRECT normal matrix calculation
+    mat3 normalMatrix = transpose(inverse(mat3(modelMatrix)));
+    outNormal = normalize(normalMatrix * inNormal);
     
-    // Pass through texture coordinates and vertex color
+    outWorldPos = locPos.xyz / locPos.w;
     outUV0 = inUV0;
     outUV1 = inUV1;
-    outColor = inColor0;
-    
-    // Final position
+    outTangent = inTangent;
     gl_Position = ubo.projection * ubo.view * vec4(outWorldPos, 1.0);
 }

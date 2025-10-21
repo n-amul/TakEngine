@@ -1,27 +1,18 @@
 #include "ModelScene.hpp"
 
+#include <iostream>
+
 #include "core/utils.hpp"
 
 void ModelScene::loadResources() {
-  // load skybox
-  createSkyboxDescriptorSetLayout();
-  createSkyboxTexture();
-  createSkyboxVertexBuffer();
-  createSkyboxIndexBuffer();
-  createSkyboxUniformBuffers();
-
   emptyTexture = textureManager->createDefault();
   // load scene
-  scene = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/underwater_explorer/scene.gltf");
+  scene = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/buster_drone/scene.gltf");
   createMaterialBuffer();
   createMeshDataBuffer();
 
   prepareUniformBuffers();
   setupDescriptors();
-  createSkyboxDescriptorSets();
-  shaderValuesParams.lightDir = glm::vec4(1.0f, -1.0f, 5.0f, 0.0f);
-  shaderValuesParams.exposure = 1.0f;
-  shaderValuesParams.gamma = 2.2f;
   updateParams();
 }
 
@@ -42,7 +33,7 @@ void ModelScene::updateUniformData() {
   uboMatrices.projection = camera.getProjectionMatrix(aspectRatio);
   uboMatrices.view = camera.getViewMatrix();
 
-  // Center and scale model, TODO: move to z-up coord
+  // move to z-up coord, Center and scale model
   float scale = (1.0f / std::max(scene.aabb[0][0], std::max(scene.aabb[1][1], scene.aabb[2][2]))) * 0.5f;
   glm::vec3 translate = -glm::vec3(scene.aabb[3][0], scene.aabb[3][1], scene.aabb[3][2]);
   translate += -0.5f * glm::vec3(scene.aabb[0][0], scene.aabb[1][1], scene.aabb[2][2]);
@@ -52,13 +43,12 @@ void ModelScene::updateUniformData() {
   uboMatrices.model[0][0] = scale;
   uboMatrices.model[1][1] = scale;
   uboMatrices.model[2][2] = scale;
+
+  // Rotate 90 degrees around X-axis to convert Y-up to Z-up
+  uboMatrices.model = glm::rotate(uboMatrices.model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
   // Apply translation
   uboMatrices.model = glm::translate(uboMatrices.model, translate);
-
-  // Convert from Y-up to Z-up by rotating -90 degrees around X axis
-  // This maps: Y -> Z, Z -> -Y
-  glm::mat4 yUpToZUp = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-  uboMatrices.model = yUpToZUp * uboMatrices.model;
 
   // Shader requires camera position in world space
   glm::mat4 cv = glm::inverse(camera.getViewMatrix());
@@ -79,7 +69,7 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
         std::string pipelineVariant = "";
 
         if (scene.materials[primitive->materialIndex].unlit) {
-          // KHR_materials_unlit
+          // TODO: add unlit shader and pipeline
           pipelineName = "unlit";
         };
 
@@ -98,9 +88,12 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
           boundPipeline = pipeline;
         }
 
-        const std::vector<VkDescriptorSet> descriptorsets = {descriptorSetsScene[currentFrame], scene.materials[primitive->materialIndex].descriptorSet,
-                                                             // @todo: per frame-in-flight
-                                                             descriptorSetsMeshData[currentFrame], descriptorSetMaterials};
+        const std::vector<VkDescriptorSet> descriptorsets = {
+            descriptorSetsScene[currentFrame],                        // set 0
+            scene.materials[primitive->materialIndex].descriptorSet,  // set 1
+            descriptorSetsMeshData[currentFrame],                     // set 2
+            descriptorSetMaterials                                    // set 3
+        };
         vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, static_cast<uint32_t>(descriptorsets.size()), descriptorsets.data(), 0, NULL);
 
         // Pass material index for this primitive using a push constant, the shader uses this to index into the material buffer
@@ -108,6 +101,7 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
         // @todo: index
         pushConstantBlock.meshIndex = node->mesh->index;
         pushConstantBlock.materialIndex = scene.materials[primitive->materialIndex].materialIndex;
+
         vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshPushConstantBlock), &pushConstantBlock);
 
         if (primitive->hasIndices) {
@@ -177,37 +171,21 @@ void ModelScene::createMaterialBuffer() {
 // The vertex shader then get's the index into this buffer from a push constant set per mesh
 void ModelScene::createMeshDataBuffer() {
   shaderMeshDataBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-  // Assign indices to all meshes in the scene
-  uint32_t meshIndex = 0;
-  std::function<void(tak::Node*)> assignMeshIndices = [&](tak::Node* node) {
-    if (node->mesh) {
-      node->mesh->index = meshIndex++;
-    }
-    for (auto& child : node->children) {
-      assignMeshIndices(child);
-    }
-  };
-  // Assign indices to ALL meshes
-  for (auto& node : scene.nodes) {
-    assignMeshIndices(node);
-  }
-  std::map<uint32_t, ShaderMeshData> meshDataMap;
+  std::vector<ShaderMeshData> shaderMeshData{};
   for (auto& node : scene.linearNodes) {
     ShaderMeshData meshData{};
     if (node->mesh) {
       memcpy(meshData.jointMatrix, node->mesh->jointMatrix.data(), sizeof(glm::mat4) * MAX_NUM_JOINTS);
-      meshData.jointcount = node->mesh->jointcount;
+      meshData.jointCount = node->mesh->jointcount;
       meshData.matrix = node->mesh->matrix;
-      meshDataMap[node->mesh->index] = meshData;
+      shaderMeshData.push_back(meshData);
     }
   }
-  // Convert map to vector in index order
-  std::vector<ShaderMeshData> shaderMeshData(meshDataMap.size());
-  for (const auto& [idx, data] : meshDataMap) {
-    shaderMeshData[idx] = data;
-  }
-  // create buffers
   for (auto& shaderMeshDataBuffer : shaderMeshDataBuffers) {
+    if (shaderMeshDataBuffer.buffer != VK_NULL_HANDLE) {
+      bufferManager->destroyBuffer(shaderMeshDataBuffer);
+    }
+    // create buffer
     VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
     shaderMeshDataBuffer =
         bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
@@ -224,42 +202,53 @@ void ModelScene::setupDescriptors() {
   descriptorSetsScene.resize(MAX_FRAMES_IN_FLIGHT);
   descriptorSetMaterials;  // single shared
   descriptorSetsMeshData.resize(MAX_FRAMES_IN_FLIGHT);
-  // Descriptor Pool
+
+  // Descriptor Pool - Fixed calculations
   uint32_t imageSamplerCount = 0;
-  uint32_t materialCount = 0;
+  uint32_t materialCount = static_cast<uint32_t>(scene.materials.size());
   uint32_t meshCount = 0;
 
-  for (auto& material : scene.materials) {
-    imageSamplerCount += 5;  // no texture will be replaced with default
-    materialCount++;
-  }
+  // Count meshes
   for (auto node : scene.linearNodes) {
     if (node->mesh) {
       meshCount++;
     }
   }
-  // ubo: (param + mvp) * each frames +skybox
-  // texture samplers (shared) + skybox
-  // material buffer(1,shared) + mesh data(2 perframe)
-  uint32_t skyboxCount = MAX_FRAMES_IN_FLIGHT;
-  std::vector<VkDescriptorPoolSize> poolSizes = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<u32>(2 * MAX_FRAMES_IN_FLIGHT + skyboxCount)},
-                                                 {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageSamplerCount + skyboxCount},
-                                                 {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 + static_cast<uint32_t>(shaderMeshDataBuffers.size())}};
+
+  uint32_t imageCount = static_cast<uint32_t>(swapChainImages.size());
+  // Scene descriptors
+  uint32_t sceneUBOCount = 1 * MAX_FRAMES_IN_FLIGHT;
+  // Material descriptors: 5 image samplers per material
+  uint32_t materialImageSamplerCount = 5 * materialCount;
+  // Mesh data descriptors: 1 storage buffer per frame
+  uint32_t meshDataStorageBufferCount = 1 * MAX_FRAMES_IN_FLIGHT;
+  // Material buffer: 1 storage buffer (shared)
+  uint32_t materialStorageBufferCount = 1;
+
+  std::vector<VkDescriptorPoolSize> poolSizes = {// UBOs
+                                                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sceneUBOCount + (meshCount * imageCount)},
+                                                 // Image samplers
+                                                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, materialImageSamplerCount},
+                                                 // Storage buffers: mesh data + material buffer
+                                                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshDataStorageBufferCount + materialStorageBufferCount}};
+
+  // to make sure we have enough size
+  for (auto& poolSize : poolSizes) {
+    poolSize.descriptorCount = static_cast<uint32_t>(poolSize.descriptorCount * 1.2f);
+  }
 
   VkDescriptorPoolCreateInfo descriptorPoolCI{};
   descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
   descriptorPoolCI.pPoolSizes = poolSizes.data();
-  descriptorPoolCI.maxSets = MAX_FRAMES_IN_FLIGHT +  // Scene descriptor sets
-                             materialCount +         // Material descriptor sets (shared)
-                             1 +                     // Material buffer descriptor set (shared)
-                             MAX_FRAMES_IN_FLIGHT +  // Mesh data descriptor sets
-                             MAX_FRAMES_IN_FLIGHT;   // skybox
-  vkCreateDescriptorPool(device, &descriptorPoolCI, nullptr, &descriptorPool);
 
-  // Descriptor layout and sets
+  descriptorPoolCI.maxSets = static_cast<uint32_t>((5 + materialCount) * 1.2f);
 
-  // Scene (matrices)
+  VkResult result = vkCreateDescriptorPool(device, &descriptorPoolCI, nullptr, &descriptorPool);
+  if (result != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create descriptor pool!");
+  }
+
   {
     // set layout
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
@@ -423,8 +412,8 @@ void ModelScene::setupDescriptors() {
 }
 
 void ModelScene::createPipeline() {
-  spdlog::info("creating cubemap pipeline...");
-  createSkyboxPipeline();
+  // spdlog::info("creating cubemap pipeline...");
+  // createSkyboxPipeline();
   spdlog::info("creating Model pipeline...");
   createModelPipeline("pbr");
   // TODO: important // create KHR_materials_unlit pipeline
@@ -448,13 +437,6 @@ void ModelScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t im
   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
   // skybox render
-  VkDeviceSize offsets[] = {0};
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
-  VkBuffer skyboxVertexBuffers[] = {skyboxVertexBuffer.buffer};
-  vkCmdBindVertexBuffers(commandBuffer, 0, 1, skyboxVertexBuffers, offsets);
-  vkCmdBindIndexBuffer(commandBuffer, skyboxIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 1, &skyboxDescriptorSets[currentFrame], 0, nullptr);
-  vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(skyboxIndices.size()), 1, 0, 0, 0);
 
   // scene render
   boundPipeline = VK_NULL_HANDLE;
@@ -480,11 +462,11 @@ void ModelScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t im
 }
 
 void ModelScene::updateScene(float deltaTime) {
-  updateSkyboxUniformBuffer();
-  // Update UBOs
+  // updateSkyboxUniformBuffer();
+  //  Update UBOs
   updateUniformData();
   updateParams();
-  // update shader buffer (TODO: add mapped pointer inside the buffer for performance)
+  //  update shader buffer (TODO: add mapped pointer inside the buffer for performance)
   bufferManager->updateBuffer(uniformBuffers[currentFrame].scene, &uboMatrices, sizeof(uboMatrices), 0);
   bufferManager->updateBuffer(uniformBuffers[currentFrame].params, &shaderValuesParams, sizeof(shaderValuesParams), 0);
 
@@ -589,8 +571,12 @@ void ModelScene::createModelPipeline(const std::string& prefix) {
   depthStencil.stencilTestEnable = VK_FALSE;
 
   // Pipeline layout
-  const std::vector<VkDescriptorSetLayout> setLayouts = {descriptorSetLayouts.scene, descriptorSetLayouts.material, descriptorSetLayouts.meshDataBuffer,
-                                                         descriptorSetLayouts.materialBuffer};
+  const std::vector<VkDescriptorSetLayout> setLayouts = {
+      descriptorSetLayouts.scene,           // 0
+      descriptorSetLayouts.material,        // 1
+      descriptorSetLayouts.meshDataBuffer,  // 2
+      descriptorSetLayouts.materialBuffer   // 3
+  };
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.setLayoutCount = setLayouts.size();
@@ -667,7 +653,7 @@ void ModelScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no 
     if (node->mesh) {
       ShaderMeshData meshData{};
       memcpy(meshData.jointMatrix, node->mesh->jointMatrix.data(), sizeof(glm::mat4) * MAX_NUM_JOINTS);
-      meshData.jointcount = node->mesh->jointcount;
+      meshData.jointCount = node->mesh->jointcount;
       meshData.matrix = node->mesh->matrix;
       meshDataMap[node->mesh->index] = meshData;
     }
@@ -682,24 +668,6 @@ void ModelScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no 
 
 void ModelScene::cleanupResources() {
   spdlog::info("Cleaning up skybox resources");
-  textureManager->destroyTexture(skyboxTexture);
-  bufferManager->destroyBuffer(skyboxVertexBuffer);
-  bufferManager->destroyBuffer(skyboxIndexBuffer);
-
-  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    if (skyboxUniformBuffers[i].memory != VK_NULL_HANDLE) {
-      vkUnmapMemory(device, skyboxUniformBuffers[i].memory);
-      skyboxUniformBuffersMapped[i] = nullptr;
-    }
-    bufferManager->destroyBuffer(skyboxUniformBuffers[i]);
-  }
-
-  vkDestroyPipeline(device, skyboxPipeline, nullptr);
-  skyboxPipeline = VK_NULL_HANDLE;
-  vkDestroyPipelineLayout(device, skyboxPipelineLayout, nullptr);
-  skyboxPipelineLayout = VK_NULL_HANDLE;
-  vkDestroyDescriptorSetLayout(device, skyboxDescriptorSetLayout, nullptr);
-  skyboxDescriptorSetLayout = VK_NULL_HANDLE;
 
   spdlog::info("Cleaning up model resources");
   vkDeviceWaitIdle(device);
@@ -928,15 +896,6 @@ void ModelScene::updateSkyboxUniformBuffer() {
 }
 
 void ModelScene::createSkyboxTexture() {
-  // std::array<std::string, 6> faceFilepaths = {
-  //     std::string(TEXTURE_DIR) + "/skybox/right.png",   // +X
-  //     std::string(TEXTURE_DIR) + "/skybox/left.png",    // -X
-  //     std::string(TEXTURE_DIR) + "/skybox/top.png",     // +Y
-  //     std::string(TEXTURE_DIR) + "/skybox/bottom.png",  // -Y
-  //     std::string(TEXTURE_DIR) + "/skybox/front.png",   // +Z
-  //     std::string(TEXTURE_DIR) + "/skybox/back.png"     //-Z
-  // };
-  // skyboxTexture = textureManager->createCubemapFromFiles(faceFilepaths);
   skyboxTexture = textureManager->createCubemapFromSingleFile(std::string(TEXTURE_DIR) + "/skybox/cubemap.png", VK_FORMAT_R8G8B8A8_SRGB);
 }
 
