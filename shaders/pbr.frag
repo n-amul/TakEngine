@@ -67,6 +67,15 @@ const float c_MinRoughness = 0.04;
 const float PBR_WORKFLOW_METALLIC_ROUGHNESS = 0.0;
 const float PBR_WORKFLOW_SPECULAR_GLOSSINESS = 1.0;
 
+const int DEBUG_MODE = 0; // Change this value to debug different things:
+// 0 = Normal rendering
+// 1 = Show material index as color
+// 2 = Show only emissive
+// 3 = Show base color texture
+// 4 = Show alpha values
+// 5 = Show UV coordinates
+// 6 = Show normals
+
 // PBR Info structure
 struct PBRInfo {
 	float NdotL;
@@ -135,23 +144,73 @@ float microfacetDistribution(PBRInfo pbrInputs) {
 	return roughnessSq / (M_PI * f * f);
 }
 
-// Convert metallic from specular glossiness inputs
-float convertMetallic(vec3 diffuse, vec3 specular, float maxSpecular) {
-	float perceivedDiffuse = sqrt(0.299 * diffuse.r * diffuse.r + 0.587 * diffuse.g * diffuse.g + 0.114 * diffuse.b * diffuse.b);
-	float perceivedSpecular = sqrt(0.299 * specular.r * specular.r + 0.587 * specular.g * specular.g + 0.114 * specular.b * specular.b);
-	if (perceivedSpecular < c_MinRoughness) {
-		return 0.0;
-	}
-	float a = c_MinRoughness;
-	float b = perceivedDiffuse * (1.0 - maxSpecular) / (1.0 - c_MinRoughness) + perceivedSpecular - 2.0 * c_MinRoughness;
-	float c = c_MinRoughness - perceivedSpecular;
-	float D = max(b * b - 4.0 * a * c, 0.0);
-	return clamp((-b + sqrt(D)) / (2.0 * a), 0.0, 1.0);
-}
-
 void main() {
 	ShaderMaterial material = materials[pushConstants.materialIndex];
 
+	// DEBUG MODES
+	if (DEBUG_MODE == 1) {
+		// Show material index as color
+		float colorValue = float(pushConstants.materialIndex) / 10.0;
+		outColor = vec4(colorValue, 1.0 - colorValue, 0.5, 1.0);
+		// Add text overlay effect for specific materials
+		if (pushConstants.materialIndex == 0) outColor = vec4(1.0, 0.0, 0.0, 1.0); // Red
+		if (pushConstants.materialIndex == 1) outColor = vec4(0.0, 1.0, 0.0, 1.0); // Green
+		if (pushConstants.materialIndex == 2) outColor = vec4(0.0, 0.0, 1.0, 1.0); // Blue
+		if (pushConstants.materialIndex == 3) outColor = vec4(1.0, 1.0, 0.0, 1.0); // Yellow
+		if (pushConstants.materialIndex == 4) outColor = vec4(1.0, 0.0, 1.0, 1.0); // Magenta
+		if (pushConstants.materialIndex == 5) outColor = vec4(0.0, 1.0, 1.0, 1.0); // Cyan
+		return;
+	}
+	
+	if (DEBUG_MODE == 2) {
+		// Show only emissive
+		vec3 emissive = material.emissiveFactor.rgb * material.emissiveStrength;
+		if (material.emissiveTextureSet > -1) {
+			emissive *= SRGBtoLINEAR(texture(emissiveMap, material.emissiveTextureSet == 0 ? inUV0 : inUV1)).rgb;
+		}
+		outColor = vec4(emissive, 1.0);
+		return;
+	}
+	
+	if (DEBUG_MODE == 3) {
+		// Show base color texture
+		if (material.colorTextureSet > -1) {
+			outColor = texture(colorMap, material.colorTextureSet == 0 ? inUV0 : inUV1);
+		} else {
+			outColor = material.baseColorFactor;
+		}
+		return;
+	}
+	
+	if (DEBUG_MODE == 4) {
+		// Show alpha values
+		vec4 baseColor = material.baseColorFactor;
+		if (material.colorTextureSet > -1) {
+			baseColor = texture(colorMap, material.colorTextureSet == 0 ? inUV0 : inUV1) * material.baseColorFactor;
+		}
+		// Show alpha as grayscale
+		outColor = vec4(vec3(baseColor.a), 1.0);
+		// Highlight transparent areas in blue
+		if (baseColor.a < 1.0 && baseColor.a > 0.0) {
+			outColor = vec4(0.0, 0.0, baseColor.a, 1.0);
+		}
+		return;
+	}
+	
+	if (DEBUG_MODE == 5) {
+		// Show UV coordinates
+		outColor = vec4(inUV0, 0.0, 1.0);
+		return;
+	}
+	
+	if (DEBUG_MODE == 6) {
+		// Show normals
+		vec3 n = (material.normalTextureSet > -1) ? getNormal(material) : normalize(inNormal);
+		outColor = vec4(n * 0.5 + 0.5, 1.0);
+		return;
+	}
+
+	// NORMAL PBR RENDERING (DEBUG_MODE == 0)
 	float perceptualRoughness;
 	float metallic;
 	vec3 diffuseColor;
@@ -192,27 +251,6 @@ void main() {
 		}
 	}
 
-	// Specular Glossiness workflow
-	if (material.workflow == PBR_WORKFLOW_SPECULAR_GLOSSINESS) {
-		if (material.physicalDescriptorTextureSet > -1) {
-			perceptualRoughness = 1.0 - texture(physicalDescriptorMap, material.physicalDescriptorTextureSet == 0 ? inUV0 : inUV1).a;
-		} else {
-			perceptualRoughness = 0.0;
-		}
-
-		const float epsilon = 1e-6;
-
-		vec4 diffuse = SRGBtoLINEAR(texture(colorMap, inUV0));
-		vec3 specular = SRGBtoLINEAR(texture(physicalDescriptorMap, inUV0)).rgb;
-
-		float maxSpecular = max(max(specular.r, specular.g), specular.b);
-		metallic = convertMetallic(diffuse.rgb, specular, maxSpecular);
-
-		vec3 baseColorDiffusePart = diffuse.rgb * ((1.0 - maxSpecular) / (1 - c_MinRoughness) / max(1 - metallic, epsilon)) * material.diffuseFactor.rgb;
-		vec3 baseColorSpecularPart = specular - (vec3(c_MinRoughness) * (1 - metallic) * (1 / max(metallic, epsilon))) * material.specularFactor.rgb;
-		baseColor = vec4(mix(baseColorDiffusePart, baseColorSpecularPart, metallic * metallic), diffuse.a);
-	}
-
 	baseColor *= inColor0;
 
 	diffuseColor = baseColor.rgb * (vec3(1.0) - f0);
@@ -232,7 +270,7 @@ void main() {
 	
 	// Calculate lighting vectors (using point light)
 	vec3 v = normalize(ubo.camPos - inWorldPos);
-	vec3 l = normalize(uboParams.lightPos - inWorldPos);  // Point light direction
+	vec3 l = normalize(uboParams.lightPos - inWorldPos);
 	vec3 h = normalize(l + v);
 
 	float NdotL = clamp(dot(n, l), 0.001, 1.0);
@@ -256,7 +294,7 @@ void main() {
 		specularColor
 	);
 
-	// Calculate the shading terms for the microfacet specular shading model
+	// Calculate the shading terms
 	vec3 F = specularReflection(pbrInputs);
 	float G = geometricOcclusion(pbrInputs);
 	float D = microfacetDistribution(pbrInputs);
@@ -272,7 +310,7 @@ void main() {
 	vec3 color = NdotL * lightColor * (diffuseContrib + specContrib);
 
 	// Add ambient lighting
-	// color += uboParams.ambientLight * diffuseColor;
+	color += uboParams.ambientLight * diffuseColor;
 
 	// Apply occlusion
 	if (material.occlusionTextureSet > -1) {
@@ -280,7 +318,7 @@ void main() {
 		color = mix(color, color * ao, 1.0);
 	}
 
-	// Add emissive
+	// Add emissive - THIS IS IMPORTANT FOR YOUR EYE
 	vec3 emissive = material.emissiveFactor.rgb * material.emissiveStrength;
 	if (material.emissiveTextureSet > -1) {
 		emissive *= SRGBtoLINEAR(texture(emissiveMap, material.emissiveTextureSet == 0 ? inUV0 : inUV1)).rgb;

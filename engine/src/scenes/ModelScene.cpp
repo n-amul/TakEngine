@@ -165,14 +165,6 @@ void ModelScene::createMaterialBuffer() {
   shaderMaterialBuffer.descriptor.offset = 0;
   shaderMaterialBuffer.descriptor.range = bufferSize;
   shaderMaterialBuffer.device = device;
-  int num = 0;
-  for (auto p : shaderMaterials) {
-    spdlog::info("----{}------", num++);
-    spdlog::info("{}", p.colorTextureSet);
-    spdlog::info("{}", p.diffuseFactor.x);
-    spdlog::info("{}", p.normalTextureSet);
-    spdlog::info("{}", p.roughnessFactor);
-  }
 }
 // We place all the shader data blocks for all meshes (node) into a single buffer
 // This allows us to use one singular allocation instead of having to do lots of small allocations per mesh

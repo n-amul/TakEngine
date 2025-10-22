@@ -13,3 +13,8 @@ if (WIN32)
                 $<TARGET_FILE_DIR:testbed>)
 endif()
 
+if (MSVC)
+    add_custom_command(TARGET testbed PRE_BUILD
+        COMMAND "${CMAKE_SOURCE_DIR}/shaders/compile.bat"
+    )
+endif()
