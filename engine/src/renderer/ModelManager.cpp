@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-ModelManager::Model ModelManager::createModelFromFile(const std::string &filename, float scale) {
+ModelManager::Model ModelManager::createModelFromFile(const std::string& filename, float scale) {
   ModelManager::Model model;
   tinygltf::Model gltfModel;
   tinygltf::TinyGLTF gltfContext;
@@ -22,8 +22,8 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   }
   model.filePath = filename.substr(0, pos);
 
-  auto loadImageDataFunc = [](tinygltf::Image *image, const int imageIndex, std::string *error, std::string *warning, int req_width, int req_height,
-                              const unsigned char *bytes, int size, void *userData) -> bool {
+  auto loadImageDataFunc = [](tinygltf::Image* image, const int imageIndex, std::string* error, std::string* warning, int req_width, int req_height,
+                              const unsigned char* bytes, int size, void* userData) -> bool {
     // KTX files will be handled by our own code
     if (image->uri.find_last_of(".") != std::string::npos) {
       if (image->uri.substr(image->uri.find_last_of(".") + 1) == "ktx2") {
@@ -44,7 +44,7 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   }
 
   model.extensions = gltfModel.extensionsUsed;
-  for (auto &extension : model.extensions) {
+  for (auto& extension : model.extensions) {
     // If this model uses basis universal compressed textures, we need to transcode them
     if (extension == "KHR_texture_basisu") {
       spdlog::info("Model uses KHR_texture_basisu, initializing basisu transcoder");
@@ -58,7 +58,7 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   tak::LoaderInfo loaderInfo{};
   size_t vertexCount = 0;
   size_t indexCount = 0;
-  const tinygltf::Scene &scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
+  const tinygltf::Scene& scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
   // Get vertex and index buffer sizes up-front
   for (size_t i = 0; i < scene.nodes.size(); i++) {
     getNodeVertexCounts(gltfModel.nodes[scene.nodes[i]], gltfModel, vertexCount, indexCount);
@@ -106,7 +106,7 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string &filenam
   return model;
 }
 
-void ModelManager::updateAnimation(ModelManager::Model &model, int index, float time) {
+void ModelManager::updateAnimation(ModelManager::Model& model, int index, float time) {
   if (model.animations.empty()) {
     spdlog::info(".glTF does not contain animation.");
     return;
@@ -115,11 +115,11 @@ void ModelManager::updateAnimation(ModelManager::Model &model, int index, float 
     spdlog::info("No animation with index {}", index);
     return;
   }
-  tak::Animation &animation = model.animations[index];
+  tak::Animation& animation = model.animations[index];
 
   bool updated = false;
-  for (auto &channel : animation.channels) {
-    tak::AnimationSampler &sampler = animation.samplers[channel.samplerIndex];
+  for (auto& channel : animation.channels) {
+    tak::AnimationSampler& sampler = animation.samplers[channel.samplerIndex];
     if (sampler.inputs.size() > sampler.outputsVec4.size()) {
       continue;
     }
@@ -145,17 +145,17 @@ void ModelManager::updateAnimation(ModelManager::Model &model, int index, float 
     }
   }
   if (updated) {
-    for (auto &node : model.nodes) {
+    for (auto& node : model.nodes) {
       node->update();
     }
   }
 }
 
-void ModelManager::loadTextures(Model &model, tinygltf::Model &gltfModel) {
+void ModelManager::loadTextures(Model& model, tinygltf::Model& gltfModel) {
   // samplers
   model.textureSamplers = textureManager->loadTextureSamplers(gltfModel);
   // textures
-  for (tinygltf::Texture &tex : gltfModel.textures) {
+  for (tinygltf::Texture& tex : gltfModel.textures) {
     int source = tex.source;
     // If this texture uses the KHR_texture_basisu, we need to get the source index from the extension structure
     if (tex.extensions.find("KHR_texture_basisu") != tex.extensions.end()) {
@@ -176,9 +176,9 @@ void ModelManager::loadTextures(Model &model, tinygltf::Model &gltfModel) {
   }
 }
 
-void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
+void ModelManager::loadMaterials(Model& model, tinygltf::Model& gltfModel) {
   // Create materials from glTF model
-  for (tinygltf::Material &mat : gltfModel.materials) {
+  for (tinygltf::Material& mat : gltfModel.materials) {
     tak::Material material{};
     material.doubleSided = mat.doubleSided;
     if (mat.alphaMode == "OPAQUE") {
@@ -297,15 +297,15 @@ void ModelManager::loadMaterials(Model &model, tinygltf::Model &gltfModel) {
   spdlog::info("Loaded {} materials", model.materials.size());
 }
 
-void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
-  for (tinygltf::Animation &anim : gltfModel.animations) {
+void ModelManager::loadAnimations(Model& model, tinygltf::Model& gltfModel) {
+  for (tinygltf::Animation& anim : gltfModel.animations) {
     tak::Animation animation{};
     animation.name = anim.name;
     if (anim.name.empty()) {
       animation.name = std::to_string(model.animations.size());
     }
     // Samplers
-    for (auto &samp : anim.samplers) {
+    for (auto& samp : anim.samplers) {
       tak::AnimationSampler sampler{};
 
       if (samp.interpolation == "LINEAR") {
@@ -317,14 +317,14 @@ void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
       }
       // Read sampler input time values
       {
-        const tinygltf::Accessor &accessor = gltfModel.accessors[samp.input];
-        const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
-        const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+        const tinygltf::Accessor& accessor = gltfModel.accessors[samp.input];
+        const tinygltf::BufferView& bufferView = gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
 
         assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
 
-        const void *dataPtr = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
-        const float *buf = static_cast<const float *>(dataPtr);
+        const void* dataPtr = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
+        const float* buf = static_cast<const float*>(dataPtr);
         for (size_t index = 0; index < accessor.count; index++) {
           sampler.inputs.push_back(buf[index]);
         }
@@ -339,17 +339,17 @@ void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
       }
       // Read sampler output T/R/S values
       {
-        const tinygltf::Accessor &accessor = gltfModel.accessors[samp.output];
-        const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
-        const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+        const tinygltf::Accessor& accessor = gltfModel.accessors[samp.output];
+        const tinygltf::BufferView& bufferView = gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
 
         assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
 
-        const void *dataPtr = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
+        const void* dataPtr = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
 
         switch (accessor.type) {
           case TINYGLTF_TYPE_VEC3: {
-            const glm::vec3 *buf = static_cast<const glm::vec3 *>(dataPtr);
+            const glm::vec3* buf = static_cast<const glm::vec3*>(dataPtr);
             for (size_t index = 0; index < accessor.count; index++) {
               sampler.outputsVec4.push_back(glm::vec4(buf[index], 0.0f));
               sampler.outputs.push_back(buf[index][0]);
@@ -359,7 +359,7 @@ void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
             break;
           }
           case TINYGLTF_TYPE_VEC4: {
-            const glm::vec4 *buf = static_cast<const glm::vec4 *>(dataPtr);
+            const glm::vec4* buf = static_cast<const glm::vec4*>(dataPtr);
             for (size_t index = 0; index < accessor.count; index++) {
               sampler.outputsVec4.push_back(buf[index]);
               sampler.outputs.push_back(buf[index][0]);
@@ -380,7 +380,7 @@ void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
     }
 
     // Channels
-    for (auto &source : anim.channels) {
+    for (auto& source : anim.channels) {
       tak::AnimationChannel channel{};
 
       if (source.target_path == "rotation") {
@@ -409,16 +409,16 @@ void ModelManager::loadAnimations(Model &model, tinygltf::Model &gltfModel) {
   }
 }
 
-void ModelManager::getNodeVertexCounts(const tinygltf::Node &node, const tinygltf::Model &model, size_t &vertexCount, size_t &indexCount) {
+void ModelManager::getNodeVertexCounts(const tinygltf::Node& node, const tinygltf::Model& model, size_t& vertexCount, size_t& indexCount) {
   if (node.children.size() > 0) {
     for (size_t i = 0; i < node.children.size(); i++) {
       getNodeVertexCounts(model.nodes[node.children[i]], model, vertexCount, indexCount);
     }
   }
   if (node.mesh > -1) {
-    const tinygltf::Mesh &mesh = model.meshes[node.mesh];
+    const tinygltf::Mesh& mesh = model.meshes[node.mesh];
     for (size_t i = 0; i < mesh.primitives.size(); i++) {
-      auto &primitive = mesh.primitives[i];
+      auto& primitive = mesh.primitives[i];
       vertexCount += model.accessors[primitive.attributes.find("POSITION")->second].count;
       if (primitive.indices > -1) {
         indexCount += model.accessors[primitive.indices].count;
@@ -427,12 +427,12 @@ void ModelManager::getNodeVertexCounts(const tinygltf::Node &node, const tinyglt
   }
 }
 
-tak::Node *ModelManager::findNode(tak::Node *parent, uint32_t index) {
-  tak::Node *nodeFound = nullptr;
+tak::Node* ModelManager::findNode(tak::Node* parent, uint32_t index) {
+  tak::Node* nodeFound = nullptr;
   if (parent->index == index) {
     return parent;
   }
-  for (auto &child : parent->children) {
+  for (auto& child : parent->children) {
     nodeFound = findNode(child, index);
     if (nodeFound) {
       break;
@@ -441,9 +441,9 @@ tak::Node *ModelManager::findNode(tak::Node *parent, uint32_t index) {
   return nodeFound;
 }
 
-tak::Node *ModelManager::nodeFromIndex(uint32_t index, const Model &model) {
-  tak::Node *nodeFound = nullptr;
-  for (auto &node : model.nodes) {
+tak::Node* ModelManager::nodeFromIndex(uint32_t index, const Model& model) {
+  tak::Node* nodeFound = nullptr;
+  for (auto& node : model.nodes) {
     nodeFound = findNode(node, index);
     if (nodeFound) {
       break;
@@ -452,7 +452,7 @@ tak::Node *ModelManager::nodeFromIndex(uint32_t index, const Model &model) {
   return nodeFound;
 }
 
-void ModelManager::getSceneDimensions(Model &model) {
+void ModelManager::getSceneDimensions(Model& model) {
   // Calculate binary volume hierarchy for all nodes in the scene
   for (auto node : model.linearNodes) {
     calculateBoundingBox(node, nullptr, model);
@@ -483,7 +483,7 @@ void ModelManager::getSceneDimensions(Model &model) {
   spdlog::info("Scene size: {:.2f} x {:.2f} x {:.2f}, center: ({:.2f}, {:.2f}, {:.2f})", size.x, size.y, size.z, center.x, center.y, center.z);
 }
 
-void ModelManager::calculateBoundingBox(tak::Node *node, tak::Node *parent, Model &model) {
+void ModelManager::calculateBoundingBox(tak::Node* node, tak::Node* parent, Model& model) {
   tak::BoundingBox parentBvh = parent ? parent->bvh : tak::BoundingBox(model.dimensions.min, model.dimensions.max);
 
   if (node->mesh) {
@@ -500,14 +500,14 @@ void ModelManager::calculateBoundingBox(tak::Node *node, tak::Node *parent, Mode
   parentBvh.min = glm::min(parentBvh.min, node->bvh.min);
   parentBvh.max = glm::min(parentBvh.max, node->bvh.max);
 
-  for (auto &child : node->children) {
+  for (auto& child : node->children) {
     calculateBoundingBox(child, node, model);
   }
 }
 
-void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex, Model &model, const tinygltf::Model &gltfModel, tak::LoaderInfo &loaderInfo,
+void ModelManager::loadNode(tak::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, Model& model, const tinygltf::Model& gltfModel, tak::LoaderInfo& loaderInfo,
                             float globalscale) {
-  tak::Node *newNode = new tak::Node{};
+  tak::Node* newNode = new tak::Node{};
   newNode->index = nodeIndex;
   newNode->parent = parent;
   newNode->name = node.name;
@@ -544,9 +544,9 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
   if (node.mesh > -1) {
     spdlog::info("Node '{}' has mesh index {}", node.name, node.mesh);
     const tinygltf::Mesh mesh = gltfModel.meshes[node.mesh];
-    tak::Mesh *newMesh = new tak::Mesh(newNode->matrix);
+    tak::Mesh* newMesh = new tak::Mesh(newNode->matrix);
     for (size_t i = 0; i < mesh.primitives.size(); i++) {
-      const tinygltf::Primitive &primitive = mesh.primitives[i];
+      const tinygltf::Primitive& primitive = mesh.primitives[i];
       uint32_t vertexStart = static_cast<uint32_t>(loaderInfo.vertexPos);
       uint32_t indexStart = static_cast<uint32_t>(loaderInfo.indexPos);
       uint32_t indexCount = 0;
@@ -557,14 +557,14 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
       bool hasIndices = primitive.indices > -1;
       // Vertex
       {
-        const float *bufferPos = nullptr;
-        const float *bufferNormals = nullptr;
-        const float *bufferTexCoordSet0 = nullptr;
-        const float *bufferTexCoordSet1 = nullptr;
-        const float *bufferColorSet0 = nullptr;
-        const void *bufferJoints = nullptr;
-        const float *bufferWeights = nullptr;
-        const float *bufferTangent = nullptr;
+        const float* bufferPos = nullptr;
+        const float* bufferNormals = nullptr;
+        const float* bufferTexCoordSet0 = nullptr;
+        const float* bufferTexCoordSet1 = nullptr;
+        const float* bufferColorSet0 = nullptr;
+        const void* bufferJoints = nullptr;
+        const float* bufferWeights = nullptr;
+        const float* bufferTangent = nullptr;
 
         int posByteStride;
         int normByteStride;
@@ -579,47 +579,47 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
         // Position attribute is required
         assert(primitive.attributes.find("POSITION") != primitive.attributes.end());
 
-        const tinygltf::Accessor &posAccessor = gltfModel.accessors[primitive.attributes.find("POSITION")->second];
-        const tinygltf::BufferView &posView = gltfModel.bufferViews[posAccessor.bufferView];
-        bufferPos = reinterpret_cast<const float *>(&(gltfModel.buffers[posView.buffer].data[posAccessor.byteOffset + posView.byteOffset]));
+        const tinygltf::Accessor& posAccessor = gltfModel.accessors[primitive.attributes.find("POSITION")->second];
+        const tinygltf::BufferView& posView = gltfModel.bufferViews[posAccessor.bufferView];
+        bufferPos = reinterpret_cast<const float*>(&(gltfModel.buffers[posView.buffer].data[posAccessor.byteOffset + posView.byteOffset]));
         posMin = glm::vec3(posAccessor.minValues[0], posAccessor.minValues[1], posAccessor.minValues[2]);
         posMax = glm::vec3(posAccessor.maxValues[0], posAccessor.maxValues[1], posAccessor.maxValues[2]);
         vertexCount = static_cast<uint32_t>(posAccessor.count);
         posByteStride = posAccessor.ByteStride(posView) ? (posAccessor.ByteStride(posView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC3);
 
         if (primitive.attributes.find("NORMAL") != primitive.attributes.end()) {
-          const tinygltf::Accessor &normAccessor = gltfModel.accessors[primitive.attributes.find("NORMAL")->second];
-          const tinygltf::BufferView &normView = gltfModel.bufferViews[normAccessor.bufferView];
-          bufferNormals = reinterpret_cast<const float *>(&(gltfModel.buffers[normView.buffer].data[normAccessor.byteOffset + normView.byteOffset]));
+          const tinygltf::Accessor& normAccessor = gltfModel.accessors[primitive.attributes.find("NORMAL")->second];
+          const tinygltf::BufferView& normView = gltfModel.bufferViews[normAccessor.bufferView];
+          bufferNormals = reinterpret_cast<const float*>(&(gltfModel.buffers[normView.buffer].data[normAccessor.byteOffset + normView.byteOffset]));
           normByteStride = normAccessor.ByteStride(normView) ? (normAccessor.ByteStride(normView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC3);
         }
 
         // UVs
         if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
-          const tinygltf::Accessor &uvAccessor = gltfModel.accessors[primitive.attributes.find("TEXCOORD_0")->second];
-          const tinygltf::BufferView &uvView = gltfModel.bufferViews[uvAccessor.bufferView];
-          bufferTexCoordSet0 = reinterpret_cast<const float *>(&(gltfModel.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
+          const tinygltf::Accessor& uvAccessor = gltfModel.accessors[primitive.attributes.find("TEXCOORD_0")->second];
+          const tinygltf::BufferView& uvView = gltfModel.bufferViews[uvAccessor.bufferView];
+          bufferTexCoordSet0 = reinterpret_cast<const float*>(&(gltfModel.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
           uv0ByteStride = uvAccessor.ByteStride(uvView) ? (uvAccessor.ByteStride(uvView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
         }
         if (primitive.attributes.find("TEXCOORD_1") != primitive.attributes.end()) {
-          const tinygltf::Accessor &uvAccessor = gltfModel.accessors[primitive.attributes.find("TEXCOORD_1")->second];
-          const tinygltf::BufferView &uvView = gltfModel.bufferViews[uvAccessor.bufferView];
-          bufferTexCoordSet1 = reinterpret_cast<const float *>(&(gltfModel.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
+          const tinygltf::Accessor& uvAccessor = gltfModel.accessors[primitive.attributes.find("TEXCOORD_1")->second];
+          const tinygltf::BufferView& uvView = gltfModel.bufferViews[uvAccessor.bufferView];
+          bufferTexCoordSet1 = reinterpret_cast<const float*>(&(gltfModel.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
           uv1ByteStride = uvAccessor.ByteStride(uvView) ? (uvAccessor.ByteStride(uvView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
         }
         // Vertex colors
         if (primitive.attributes.find("COLOR_0") != primitive.attributes.end()) {
-          const tinygltf::Accessor &accessor = gltfModel.accessors[primitive.attributes.find("COLOR_0")->second];
-          const tinygltf::BufferView &view = gltfModel.bufferViews[accessor.bufferView];
-          bufferColorSet0 = reinterpret_cast<const float *>(&(gltfModel.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+          const tinygltf::Accessor& accessor = gltfModel.accessors[primitive.attributes.find("COLOR_0")->second];
+          const tinygltf::BufferView& view = gltfModel.bufferViews[accessor.bufferView];
+          bufferColorSet0 = reinterpret_cast<const float*>(&(gltfModel.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
           color0ByteStride = accessor.ByteStride(view) ? (accessor.ByteStride(view) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC3);
         }
 
         // Skinning
         // Joints
         if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
-          const tinygltf::Accessor &jointAccessor = gltfModel.accessors[primitive.attributes.find("JOINTS_0")->second];
-          const tinygltf::BufferView &jointView = gltfModel.bufferViews[jointAccessor.bufferView];
+          const tinygltf::Accessor& jointAccessor = gltfModel.accessors[primitive.attributes.find("JOINTS_0")->second];
+          const tinygltf::BufferView& jointView = gltfModel.bufferViews[jointAccessor.bufferView];
           bufferJoints = &(gltfModel.buffers[jointView.buffer].data[jointAccessor.byteOffset + jointView.byteOffset]);
           jointComponentType = jointAccessor.componentType;
           jointByteStride = jointAccessor.ByteStride(jointView) ? (jointAccessor.ByteStride(jointView) / tinygltf::GetComponentSizeInBytes(jointComponentType))
@@ -627,16 +627,16 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
         }
 
         if (primitive.attributes.find("WEIGHTS_0") != primitive.attributes.end()) {
-          const tinygltf::Accessor &weightAccessor = gltfModel.accessors[primitive.attributes.find("WEIGHTS_0")->second];
-          const tinygltf::BufferView &weightView = gltfModel.bufferViews[weightAccessor.bufferView];
-          bufferWeights = reinterpret_cast<const float *>(&(gltfModel.buffers[weightView.buffer].data[weightAccessor.byteOffset + weightView.byteOffset]));
+          const tinygltf::Accessor& weightAccessor = gltfModel.accessors[primitive.attributes.find("WEIGHTS_0")->second];
+          const tinygltf::BufferView& weightView = gltfModel.bufferViews[weightAccessor.bufferView];
+          bufferWeights = reinterpret_cast<const float*>(&(gltfModel.buffers[weightView.buffer].data[weightAccessor.byteOffset + weightView.byteOffset]));
           weightByteStride =
               weightAccessor.ByteStride(weightView) ? (weightAccessor.ByteStride(weightView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC4);
         }
         if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
-          const tinygltf::Accessor &tangentAccessor = gltfModel.accessors[primitive.attributes.find("TANGENT")->second];
-          const tinygltf::BufferView &tangentView = gltfModel.bufferViews[tangentAccessor.bufferView];
-          bufferTangent = reinterpret_cast<const float *>(&(gltfModel.buffers[tangentView.buffer].data[tangentAccessor.byteOffset + tangentView.byteOffset]));
+          const tinygltf::Accessor& tangentAccessor = gltfModel.accessors[primitive.attributes.find("TANGENT")->second];
+          const tinygltf::BufferView& tangentView = gltfModel.bufferViews[tangentAccessor.bufferView];
+          bufferTangent = reinterpret_cast<const float*>(&(gltfModel.buffers[tangentView.buffer].data[tangentAccessor.byteOffset + tangentView.byteOffset]));
 
           tanByteStride = tangentAccessor.ByteStride(tangentView) ? (tangentAccessor.ByteStride(tangentView) / sizeof(float))
                                                                   : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC4);  // 4 floats: x,y,z,w
@@ -645,7 +645,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
         hasSkin = (bufferJoints && bufferWeights);
 
         for (size_t v = 0; v < posAccessor.count; v++) {
-          tak::Vertex &vert = loaderInfo.vertexBuffer[loaderInfo.vertexPos];
+          tak::Vertex& vert = loaderInfo.vertexBuffer[loaderInfo.vertexPos];
           vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * posByteStride]), 1.0f);
           vert.normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * normByteStride]) : glm::vec3(0.0f)));
           vert.uv0 = bufferTexCoordSet0 ? glm::make_vec2(&bufferTexCoordSet0[v * uv0ByteStride]) : glm::vec3(0.0f);
@@ -656,12 +656,12 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
           if (hasSkin) {
             switch (jointComponentType) {
               case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
-                const uint16_t *buf = static_cast<const uint16_t *>(bufferJoints);
+                const uint16_t* buf = static_cast<const uint16_t*>(bufferJoints);
                 vert.joint0 = glm::uvec4(glm::make_vec4(&buf[v * jointByteStride]));
                 break;
               }
               case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
-                const uint8_t *buf = static_cast<const uint8_t *>(bufferJoints);
+                const uint8_t* buf = static_cast<const uint8_t*>(bufferJoints);
                 vert.joint0 = glm::vec4(glm::make_vec4(&buf[v * jointByteStride]));
                 break;
               }
@@ -683,16 +683,16 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
       }
       // Indices
       if (hasIndices) {
-        const tinygltf::Accessor &accessor = gltfModel.accessors[primitive.indices > -1 ? primitive.indices : 0];
-        const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
-        const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+        const tinygltf::Accessor& accessor = gltfModel.accessors[primitive.indices > -1 ? primitive.indices : 0];
+        const tinygltf::BufferView& bufferView = gltfModel.bufferViews[accessor.bufferView];
+        const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
 
         indexCount = static_cast<uint32_t>(accessor.count);
-        const void *dataPtr = &(buffer.data[accessor.byteOffset + bufferView.byteOffset]);
+        const void* dataPtr = &(buffer.data[accessor.byteOffset + bufferView.byteOffset]);
 
         switch (accessor.componentType) {
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
-            const uint32_t *buf = static_cast<const uint32_t *>(dataPtr);
+            const uint32_t* buf = static_cast<const uint32_t*>(dataPtr);
             for (size_t index = 0; index < accessor.count; index++) {
               loaderInfo.indexBuffer[loaderInfo.indexPos] = buf[index] + vertexStart;
               loaderInfo.indexPos++;
@@ -700,7 +700,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-            const uint16_t *buf = static_cast<const uint16_t *>(dataPtr);
+            const uint16_t* buf = static_cast<const uint16_t*>(dataPtr);
             for (size_t index = 0; index < accessor.count; index++) {
               loaderInfo.indexBuffer[loaderInfo.indexPos] = buf[index] + vertexStart;
               loaderInfo.indexPos++;
@@ -708,7 +708,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
             break;
           }
           case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
-            const uint8_t *buf = static_cast<const uint8_t *>(dataPtr);
+            const uint8_t* buf = static_cast<const uint8_t*>(dataPtr);
             for (size_t index = 0; index < accessor.count; index++) {
               loaderInfo.indexBuffer[loaderInfo.indexPos] = buf[index] + vertexStart;
               loaderInfo.indexPos++;
@@ -723,7 +723,7 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
       }
 
       uint32_t materialIndex = primitive.material > -1 ? primitive.material : static_cast<uint32_t>(model.materials.size() - 1);
-      tak::Primitive *newPrimitive = new tak::Primitive(indexStart, indexCount, vertexCount, materialIndex);
+      tak::Primitive* newPrimitive = new tak::Primitive(indexStart, indexCount, vertexCount, materialIndex);
       newPrimitive->setBoundingBox(posMin, posMax);
       newMesh->primitives.push_back(newPrimitive);
     }
@@ -750,9 +750,9 @@ void ModelManager::loadNode(tak::Node *parent, const tinygltf::Node &node, uint3
   model.linearNodes.push_back(newNode);
 }
 
-void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
-  for (tinygltf::Skin &source : gltfModel.skins) {
-    tak::Skin *newSkin = new tak::Skin{};
+void ModelManager::loadSkins(Model& model, tinygltf::Model& gltfModel) {
+  for (tinygltf::Skin& source : gltfModel.skins) {
+    tak::Skin* newSkin = new tak::Skin{};
     newSkin->name = source.name;
 
     // Find skeleton root node
@@ -762,7 +762,7 @@ void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
 
     // Find joint nodes
     for (int jointIndex : source.joints) {
-      tak::Node *node = nodeFromIndex(jointIndex, model);
+      tak::Node* node = nodeFromIndex(jointIndex, model);
       if (node) {
         newSkin->joints.push_back(nodeFromIndex(jointIndex, model));
       }
@@ -770,9 +770,9 @@ void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
 
     // Get inverse bind matrices from buffer
     if (source.inverseBindMatrices > -1) {
-      const tinygltf::Accessor &accessor = gltfModel.accessors[source.inverseBindMatrices];
-      const tinygltf::BufferView &bufferView = gltfModel.bufferViews[accessor.bufferView];
-      const tinygltf::Buffer &buffer = gltfModel.buffers[bufferView.buffer];
+      const tinygltf::Accessor& accessor = gltfModel.accessors[source.inverseBindMatrices];
+      const tinygltf::BufferView& bufferView = gltfModel.bufferViews[accessor.bufferView];
+      const tinygltf::Buffer& buffer = gltfModel.buffers[bufferView.buffer];
       newSkin->inverseBindMatrices.resize(accessor.count);
       memcpy(newSkin->inverseBindMatrices.data(), &buffer.data[accessor.byteOffset + bufferView.byteOffset], accessor.count * sizeof(glm::mat4));
     }
@@ -788,7 +788,7 @@ void ModelManager::loadSkins(Model &model, tinygltf::Model &gltfModel) {
   }
 }
 
-void ModelManager::destroyModel(Model &model) {
+void ModelManager::destroyModel(Model& model) {
   bufferManager->destroyBuffer(model.vertices);
   bufferManager->destroyBuffer(model.indices);
   for (int i = 0; i < model.textures.size(); i++) {

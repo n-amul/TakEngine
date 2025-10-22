@@ -48,8 +48,6 @@ void main() {
     outColor0 = inColor0;
 
     vec4 locPos;
-    mat4 modelMatrix;
-    
     if (meshData[pushConstants.meshIndex].jointCount > 0) {
         // Mesh is skinned
         mat4 skinMat = 
@@ -57,21 +55,18 @@ void main() {
             inWeight0.y * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.y] +
             inWeight0.z * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.z] +
             inWeight0.w * meshData[pushConstants.meshIndex].jointMatrix[inJoint0.w];
-
-        modelMatrix = ubo.model * meshData[pushConstants.meshIndex].matrix * skinMat;
-        locPos = modelMatrix * vec4(inPos, 1.0);
+        locPos = ubo.model * meshData[pushConstants.meshIndex].matrix * skinMat * vec4(inPos, 1.0);
+        outNormal = normalize(transpose(inverse(mat3(ubo.model * meshData[pushConstants.meshIndex].matrix * skinMat))) * inNormal);
     } else {
-        modelMatrix = ubo.model * meshData[pushConstants.meshIndex].matrix;
-        locPos = modelMatrix * vec4(inPos, 1.0);
+        locPos = ubo.model * meshData[pushConstants.meshIndex].matrix * vec4(inPos, 1.0);
+        outNormal = normalize(transpose(inverse(mat3(ubo.model * meshData[pushConstants.meshIndex].matrix))) * inNormal);
     }
-    
-    // CORRECT normal matrix calculation
-    mat3 normalMatrix = transpose(inverse(mat3(modelMatrix)));
-    outNormal = normalize(normalMatrix * inNormal);
-    
+    // yflip for vulkan
+    locPos.y = -locPos.y;
     outWorldPos = locPos.xyz / locPos.w;
     outUV0 = inUV0;
     outUV1 = inUV1;
     outTangent = inTangent;
     gl_Position = ubo.projection * ubo.view * vec4(outWorldPos, 1.0);
 }
+

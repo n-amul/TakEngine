@@ -6,6 +6,8 @@
 #include "renderer/VulkanBase.hpp"
 #include "renderer/ui.hpp"
 
+// simple pbr
+
 class TAK_API ModelScene : public VulkanBase {
  public:
   ModelScene() {};
@@ -31,7 +33,7 @@ class TAK_API ModelScene : public VulkanBase {
 
   // ============= Uniform Data Structures =============
   struct alignas(16) ShaderValuesParams {
-    glm::vec4 lightDir;
+    glm::vec3 lightPos = glm::vec3(0.0f, -1.0f, 1.0f);
     float exposure = 1.0f;
     float gamma = 2.2f;
     glm::vec3 ambientLight = glm::vec3(0.01);
@@ -53,6 +55,7 @@ class TAK_API ModelScene : public VulkanBase {
   std::vector<UniformBufferSet> uniformBuffers;  // One per frame
 
   // Material SSBO (GPU buffer with all material properties)
+  // std430 align: multiple of biggest data
   struct alignas(16) ShaderMaterial {
     glm::vec4 baseColorFactor;
     glm::vec4 emissiveFactor;

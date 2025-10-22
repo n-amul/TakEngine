@@ -56,8 +56,8 @@ void ModelScene::updateUniformData() {
 }
 
 void ModelScene::updateParams() {
-  shaderValuesParams.lightDir = glm::vec4(sin(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), sin(glm::radians(lightSource.rotation.y)),
-                                          cos(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), 0.0f);
+  // shaderValuesParams.lightDir = glm::vec4(sin(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), sin(glm::radians(lightSource.rotation.y)),
+  //                                         cos(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), 0.0f);
 }
 
 void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode) {
@@ -165,6 +165,14 @@ void ModelScene::createMaterialBuffer() {
   shaderMaterialBuffer.descriptor.offset = 0;
   shaderMaterialBuffer.descriptor.range = bufferSize;
   shaderMaterialBuffer.device = device;
+  int num = 0;
+  for (auto p : shaderMaterials) {
+    spdlog::info("----{}------", num++);
+    spdlog::info("{}", p.colorTextureSet);
+    spdlog::info("{}", p.diffuseFactor.x);
+    spdlog::info("{}", p.normalTextureSet);
+    spdlog::info("{}", p.roughnessFactor);
+  }
 }
 // We place all the shader data blocks for all meshes (node) into a single buffer
 // This allows us to use one singular allocation instead of having to do lots of small allocations per mesh
