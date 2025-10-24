@@ -69,9 +69,10 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
         std::string pipelineVariant = "";
 
         if (scene.materials[primitive->materialIndex].unlit) {
-          // TODO: add unlit shader and pipeline
+          // TODO: add unlit shader and pipeline, no support yet!
           pipelineName = "unlit";
-        };
+          spdlog::error("unlit pipeline not yet supported");
+        }
 
         // Material properties define if we e.g. need to bind a pipeline variant with culling disabled (double sided)
         if (alphaMode == tak::Material::ALPHAMODE_BLEND) {
@@ -538,10 +539,10 @@ void ModelScene::createModelPipeline(const std::string& prefix) {
   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
-  // Multisampling (disabled)
+  // Multisampling
   VkPipelineMultisampleStateCreateInfo multisampling{};
   multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;  // TODO: add MSAA
+  multisampling.rasterizationSamples = msaaSamples;
 
   // Color blending
   VkPipelineColorBlendAttachmentState blendAttachmentState{};

@@ -170,7 +170,7 @@ class TextureManager {
                                                                   VK_SAMPLER_ADDRESS_MODE_REPEAT},
                                  float maxLod = 0.0f);
   void InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
-                   uint32_t mipLevels = 1);
+                   uint32_t mipLevels = 1, VkSampleCountFlagBits numSamples = VK_SAMPLE_COUNT_1_BIT);
   void transitionImageLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer, uint32_t mipLevels = 1);
   void copyBufferToImage(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, VkDeviceSize bufferOffset = 0, uint32_t miplevel = 0,
                          VkExtent3D extent = {0, 0, 1});
@@ -182,15 +182,10 @@ class TextureManager {
 
   // cube map
   Texture createCubemapFromFiles(const std::array<std::string, 6>& faceFilepaths, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
-
   Texture createCubemapFromSingleFile(const std::string& filepath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
-
   VkImageView createCubemapImageView(VkImage image, VkFormat format, uint32_t levelCount = 1);
-
   void transitionCubemapLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer);
-
   void copyBufferToCubemapFace(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, uint32_t faceIndex, VkDeviceSize bufferOffset = 0, uint32_t miplevel = 0);
-
   void InitCubemapTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                           uint32_t mipLevels = 1);
 };

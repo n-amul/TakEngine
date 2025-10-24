@@ -123,6 +123,11 @@ class TAK_API VulkanBase {
   VkRenderPass renderPass;
   std::vector<VkFramebuffer> swapChainFramebuffers;
 
+  void createColorResources();
+  bool multisampling = true;
+  VkSampleCountFlagBits msaaSamples;
+  TextureManager::Texture msaaColor;
+
   VkCommandPool commandPool;
   VkCommandPool transientCommandPool;
   std::vector<VkCommandBuffer> commandBuffers;

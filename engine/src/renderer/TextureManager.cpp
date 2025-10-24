@@ -11,7 +11,7 @@
 #include "TextureManager.hpp"
 
 void TextureManager::InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-                                 VkMemoryPropertyFlags properties, uint32_t mipLevels) {
+                                 VkMemoryPropertyFlags properties, uint32_t mipLevels, VkSampleCountFlagBits numSamples) {
   // Initialize texture properties
   texture.device = context->device;
   texture.extent = {width, height, 1};
@@ -33,7 +33,7 @@ void TextureManager::InitTexture(Texture& texture, uint32_t width, uint32_t heig
   imageInfo.tiling = tiling;
   imageInfo.initialLayout = texture.currentLayout;
   imageInfo.usage = usage;
-  imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+  imageInfo.samples = numSamples;
   imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   if (vkCreateImage(context->device, &imageInfo, nullptr, &texture.image) != VK_SUCCESS) {
