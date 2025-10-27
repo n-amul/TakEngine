@@ -30,6 +30,7 @@ class TAK_API PBRIBLScene : VulkanBase {
   } textures;
   struct Models {
     ModelManager::Model scene;
+    ModelManager::Model skybox;
   } models;
   // ============= Lighting =============
   struct LightSource {
@@ -135,17 +136,18 @@ class TAK_API PBRIBLScene : VulkanBase {
 
   // ============= Private Methods =============
   void loadAssets();
+  void loadEnviroemnt(std::string& filename);
   void createMaterialBuffer();
   void createMeshDataBuffer();
   void generateBRDFLUT();
-  // void createModelPipeline();
-  // void updateMeshDataBuffer(uint32_t index);
-  // void prepareUniformBuffers();
-  // void updateUniformData();
-  // void updateParams();
-  // void setupDescriptors();
+  void createModelPipeline();
+  void updateMeshDataBuffer(uint32_t index);
+  void prepareUniformBuffers();
+  void updateUniformData();
+  void updateParams();
+  void setupDescriptors();
 
-  // void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t cbIndex, tak::Material::AlphaMode alphaMode);
+  void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t cbIndex, tak::Material::AlphaMode alphaMode);
 
   // skybox
 };

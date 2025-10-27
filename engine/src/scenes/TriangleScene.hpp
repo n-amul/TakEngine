@@ -1,5 +1,5 @@
 #pragma once
-#include <basisu_transcoder.h>
+#include <ktx.h>
 #include <tiny_gltf.h>
 
 #include <array>

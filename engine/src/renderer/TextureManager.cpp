@@ -1,6 +1,6 @@
 #include "renderer/TextureManager.hpp"
 
-#include <basisu_transcoder.h>
+#include <ktx.h>
 #include <spdlog/spdlog.h>
 #include <stb_image.h>
 
@@ -112,7 +112,7 @@ void TextureManager::transitionImageLayout(Texture& texture, VkImageLayout oldLa
   vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-VkSampler TextureManager::createTextureSampler(TextureSampler textureSampler, float maxLod) {
+VkSampler TextureManager::createTextureSampler(TextureSampler textureSampler, float maxLod, float maxAnisotropy) {
   VkSampler sampler;
   VkSamplerCreateInfo samplerInfo{};
   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -127,8 +127,12 @@ VkSampler TextureManager::createTextureSampler(TextureSampler textureSampler, fl
 
   VkPhysicalDeviceProperties properties{};
   vkGetPhysicalDeviceProperties(context->physicalDevice, &properties);
+  if (maxAnisotropy == 0.0f) {
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+  } else {
+    samplerInfo.maxAnisotropy = maxAnisotropy;
+  }
 
-  samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
   samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
   samplerInfo.unnormalizedCoordinates = VK_FALSE;
 
@@ -183,7 +187,6 @@ void TextureManager::copyBufferToImage(Texture& texture, VkBuffer buffer, VkComm
 }
 
 TextureManager::Texture TextureManager::createTextureFromFile(const std::string& filepath, VkFormat format) {
-  // Add logging
   spdlog::info("Loading texture from: {}", filepath);
 
   int texWidth, texHeight, texChannels;
@@ -223,13 +226,16 @@ TextureManager::Texture TextureManager::createTextureFromFile(const std::string&
   texture.imageView = createImageView(texture.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
   texture.sampler = createTextureSampler();
   // Staging buffer will be cleaned up by its destructor
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
+
   return texture;
 }
 
 TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinygltf::Image& gltfImage, std::string path, TextureSampler textureSampler, VkQueue copyQueue) {
   Texture texture;
   spdlog::info("Creating texture from glTF image: {}", gltfImage.name);
-  // Get image dimensions and data
 
   // KTX2 files need to be handled explicitly
   bool isKtx2 = false;
@@ -238,116 +244,106 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
       isKtx2 = true;
     }
   }
+
   VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+
   if (isKtx2) {
-    // Image is KTX2 using basis universal compression. Those images
-    // need to be loaded from disk and will be transcoded to a native
-    // GPU format
-    basist::ktx2_transcoder ktxTranscoder;
+    // Load KTX2 file using KTX library
     const std::string filename = path + "/" + gltfImage.uri;
-    std::ifstream ifs(filename, std::ios::binary | std::ios::in | std::ios::ate);
-    if (!ifs.is_open()) {
-      throw std::runtime_error("Could not load the requested image file " + filename);
-    }
-    uint32_t inputDataSize = static_cast<uint32_t>(ifs.tellg());
-    std::vector<char> inputData(inputDataSize);
 
-    ifs.seekg(0, std::ios::beg);
-    ifs.read(inputData.data(), inputDataSize);
-    bool success = ktxTranscoder.init(inputData.data(), inputDataSize);
-    if (!success) {
-      throw std::runtime_error("Could not initialize ktx2 transcoder for image file " + filename);
+    ktxTexture2* ktxTex;
+    KTX_error_code result = ktxTexture2_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex);
+
+    if (result != KTX_SUCCESS) {
+      throw std::runtime_error("Could not load KTX2 file: " + filename);
     }
 
-    // Select target format based on device features (use uncompressed
-    // if none supported)
-    auto targetFormat = basist::transcoder_texture_format::cTFRGBA32;
+    // Select target format based on device features
+    ktx_transcode_fmt_e targetFormat = KTX_TTF_RGBA32;  // Default uncompressed
+
     auto formatSupported = [&](VkFormat format) {
       VkFormatProperties formatProperties;
       vkGetPhysicalDeviceFormatProperties(context->physicalDevice, format, &formatProperties);
       return ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) && (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
     };
+
     if (context->features.textureCompressionBC) {
       if (formatSupported(VK_FORMAT_BC7_UNORM_BLOCK)) {
-        targetFormat = basist::transcoder_texture_format::cTFBC7_RGBA;
+        targetFormat = KTX_TTF_BC7_RGBA;
         format = VK_FORMAT_BC7_UNORM_BLOCK;
       } else if (formatSupported(VK_FORMAT_BC3_UNORM_BLOCK)) {
-        targetFormat = basist::transcoder_texture_format::cTFBC3_RGBA;
+        targetFormat = KTX_TTF_BC3_RGBA;
         format = VK_FORMAT_BC3_UNORM_BLOCK;
       }
     }
 
-    const bool targetFormatIsUncompressed = basist::basis_transcoder_format_is_uncompressed(targetFormat);
-    std::vector<basist::ktx2_image_level_info> levelInfos(ktxTranscoder.get_levels());
-    texture.mipLevels = ktxTranscoder.get_levels();
+    // Transcode if needed (basis compressed)
+    if (ktxTexture2_NeedsTranscoding(ktxTex)) {
+      ktx_error_code_e transcode_result = ktxTexture2_TranscodeBasis(ktxTex, targetFormat, 0);
+      if (transcode_result != KTX_SUCCESS) {
+        ktxTexture_Destroy(ktxTexture(ktxTex));
+        throw std::runtime_error("Failed to transcode KTX2 texture: " + filename);
+      }
+    }
 
-    // Retrieves information about each mip level in the texture for
-    // later transcoding. only support 2D images (no cube maps or
-    // layered images)
-    for (uint32_t i = 0; i < texture.mipLevels; i++) {
-      ktxTranscoder.get_image_level_info(levelInfos[i], i, 0, 0);
-    }
-    // Create one staging buffer large enough to hold all uncompressed
-    // image levels
-    const uint32_t bytesPerBlockOrPixel = basist::basis_get_bytes_per_block_or_pixel(targetFormat);
-    uint32_t numBlocksOrPixels = 0;
-    VkDeviceSize totalBufferSize = 0;
-    for (uint32_t i = 0; i < texture.mipLevels; i++) {
-      // Size calculations differ for compressed/uncompressed formats
-      numBlocksOrPixels = targetFormatIsUncompressed ? levelInfos[i].m_orig_width * levelInfos[i].m_orig_height : levelInfos[i].m_total_blocks;
-      totalBufferSize += numBlocksOrPixels * bytesPerBlockOrPixel;
-    }
-    // Create staging buffer using BufferManager
+    // Get texture info
+    ktxTexture* baseTex = ktxTexture(ktxTex);
+    uint32_t width = baseTex->baseWidth;
+    uint32_t height = baseTex->baseHeight;
+    texture.mipLevels = baseTex->numLevels;
+
+    // Get total data size
+    ktx_size_t totalBufferSize = ktxTexture_GetDataSize(baseTex);
+    ktx_uint8_t* ktxData = ktxTexture_GetData(baseTex);
+
+    // Create staging buffer
     BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(totalBufferSize);
 
-    // Map the staging buffer memory
+    // Copy KTX data to staging buffer
     void* data;
     vkMapMemory(context->device, stagingBuffer.memory, 0, totalBufferSize, 0, &data);
-    unsigned char* bufferPtr = static_cast<unsigned char*>(data);
-    // Start transcoding
-    success = ktxTranscoder.start_transcoding();
-    if (!success) {
-      vkUnmapMemory(context->device, stagingBuffer.memory);
-      throw std::runtime_error("Could not start transcoding for image file " + filename);
-    }
-    // Transcode all mip levels into the temporary buffer
-    for (uint32_t i = 0; i < texture.mipLevels; i++) {
-      numBlocksOrPixels = targetFormatIsUncompressed ? levelInfos[i].m_orig_width * levelInfos[i].m_orig_height : levelInfos[i].m_total_blocks;
-      uint32_t outputSize = numBlocksOrPixels * bytesPerBlockOrPixel;
-      if (!ktxTranscoder.transcode_image_level(i, 0, 0, bufferPtr, numBlocksOrPixels, targetFormat, 0)) {
-        vkUnmapMemory(context->device, stagingBuffer.memory);
-        throw std::runtime_error("Could not transcode the requested image file " + filename);
-      }
-      bufferPtr += outputSize;
-    }
-    vkUnmapMemory(context->device,
-                  stagingBuffer.memory);  // need copy instead of map??
+    memcpy(data, ktxData, totalBufferSize);
+    vkUnmapMemory(context->device, stagingBuffer.memory);
 
-    // create image
+    // Create image
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    InitTexture(texture, levelInfos[0].m_orig_width, levelInfos[0].m_orig_height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                texture.mipLevels);
+    InitTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.mipLevels);
 
+    // Setup copy regions for each mip level
+    std::vector<VkBufferImageCopy> copyRegions;
+    for (uint32_t level = 0; level < texture.mipLevels; level++) {
+      ktx_size_t offset;
+      ktxTexture_GetImageOffset(baseTex, level, 0, 0, &offset);
+
+      VkBufferImageCopy copyRegion = {};
+      copyRegion.bufferOffset = offset;
+      copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      copyRegion.imageSubresource.mipLevel = level;
+      copyRegion.imageSubresource.baseArrayLayer = 0;
+      copyRegion.imageSubresource.layerCount = 1;
+      copyRegion.imageExtent.width = std::max(1u, width >> level);
+      copyRegion.imageExtent.height = std::max(1u, height >> level);
+      copyRegion.imageExtent.depth = 1;
+
+      copyRegions.push_back(copyRegion);
+    }
+
+    // Copy to GPU
     VkCommandBuffer copyCmd = cmdUtils->beginSingleTimeCommands();
-    VkImageSubresourceRange subresourceRange = {};
-    subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    subresourceRange.levelCount = texture.mipLevels;
-    subresourceRange.layerCount = 1;
+
     transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCmd, texture.mipLevels);
 
-    VkDeviceSize bufferOffset = 0;
-    for (uint32_t i = 0; i < texture.mipLevels; i++) {
-      numBlocksOrPixels = targetFormatIsUncompressed ? levelInfos[i].m_orig_width * levelInfos[i].m_orig_height : levelInfos[i].m_total_blocks;
-      uint32_t outputSize = numBlocksOrPixels * bytesPerBlockOrPixel;
-      copyBufferToImage(texture, stagingBuffer.buffer, copyCmd, bufferOffset, i, {levelInfos[i].m_orig_width, levelInfos[i].m_orig_height, 1});
-      bufferOffset += outputSize;
-    }
+    vkCmdCopyBufferToImage(copyCmd, stagingBuffer.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(copyRegions.size()), copyRegions.data());
+
     transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, copyCmd, texture.mipLevels);
 
-    // Update the texture's current layout
     texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     cmdUtils->endSingleTimeCommands(copyCmd);
-    stagingBuffer = BufferManager::Buffer();
+
+    // Cleanup
+    ktxTexture_Destroy(baseTex);
+    bufferManager->destroyBuffer(stagingBuffer);  // Clean up staging buffer
+
   } else {  // Image is a basic glTF format like png or jpg and can be
             // loaded directly via tinyglTF
     std::vector<unsigned char> buffer;
@@ -686,88 +682,6 @@ void TextureManager::copyBufferToCubemapFace(Texture& texture, VkBuffer buffer, 
   vkCmdCopyBufferToImage(commandBuffer, buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
-TextureManager::Texture TextureManager::createCubemapFromFiles(const std::array<std::string, 6>& faceFilepaths, VkFormat format) {
-  spdlog::info("Loading cubemap texture");
-  // Face order: +X, -X, +Y, -Y, +Z, -Z
-  // (right, left, top, bottom, front, back)
-
-  int texWidth = 0, texHeight = 0;
-  VkDeviceSize layerSize = 0;
-  VkDeviceSize totalSize = 0;
-  // Load all faces and verify they have the same dimensions
-  std::array<stbi_uc*, 6> faceData;
-  for (int i = 0; i < 6; ++i) {
-    int width, height, channels;
-    faceData[i] = stbi_load(faceFilepaths[i].c_str(), &width, &height, &channels, STBI_rgb_alpha);
-
-    if (!faceData[i]) {
-      // Clean up previously loaded faces
-      for (int j = 0; j < i; ++j) {
-        stbi_image_free(faceData[j]);
-      }
-      throw std::runtime_error("Failed to load cubemap face: " + faceFilepaths[i]);
-    }
-
-    if (i == 0) {
-      texWidth = width;
-      texHeight = height;
-      layerSize = width * height * 4;
-      totalSize = layerSize * 6;
-    } else if (width != texWidth || height != texHeight) {
-      // Clean up all loaded faces
-      for (int j = 0; j <= i; ++j) {
-        stbi_image_free(faceData[j]);
-      }
-      throw std::runtime_error("Cubemap faces must have the same dimensions");
-    }
-    spdlog::info("Loaded cubemap face {}: {}x{}", i, width, height);
-  }
-
-  // Create staging buffer for all faces
-  BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(totalSize);
-
-  // Copy all face data to staging buffer
-  void* data;
-  vkMapMemory(context->device, stagingBuffer.memory, 0, totalSize, 0, &data);
-  for (int i = 0; i < 6; ++i) {
-    memcpy(static_cast<char*>(data) + (i * layerSize), faceData[i], layerSize);
-    stbi_image_free(faceData[i]);
-  }
-  vkUnmapMemory(context->device, stagingBuffer.memory);
-
-  // Create cubemap texture
-  Texture texture;
-  VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-
-  InitCubemapTexture(texture, texWidth, texHeight, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-  // Transfer data to GPU
-  VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
-
-  // Transition entire cubemap to transfer destination
-  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, commandBuffer);
-
-  // Copy each face from staging buffer
-  for (uint32_t face = 0; face < 6; ++face) {
-    copyBufferToCubemapFace(texture, stagingBuffer.buffer, commandBuffer, face, face * layerSize);
-  }
-
-  // Transition to shader read
-  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
-
-  cmdUtils->endSingleTimeCommands(commandBuffer);
-
-  // Create image view and sampler
-  texture.imageView = createCubemapImageView(texture.image, format);
-
-  // Cubemaps typically use clamp to edge addressing
-  TextureSampler cubemapSampler = {VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
-  texture.sampler = createTextureSampler(cubemapSampler);
-
-  return texture;
-}
-
 TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::string& filepath, VkFormat format) {
   spdlog::info("Loading cubemap from single file: {}", filepath);
 
@@ -947,6 +861,10 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
                                    VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   texture.sampler = createTextureSampler(cubemapSampler, static_cast<float>(mipLevels));
 
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
+
   return texture;
 }
 
@@ -1017,3 +935,96 @@ TextureManager::Texture TextureManager::createDefault() {
   return texture;
 }
 void TextureManager::destroyTexture(Texture& texture) { texture = Texture(); }
+
+TextureManager::Texture TextureManager::loadHDRCubemap(std::string& filename, VkFormat format, VkImageUsageFlags usage) {
+  // Load KTX texture
+  ktxTexture* ktxTex = nullptr;
+  KTX_error_code result = ktxTexture_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex);
+
+  if (result != KTX_SUCCESS) {
+    throw std::runtime_error("Failed to load KTX texture: " + filename);
+  }
+
+  // Check if it's a cube map
+  if (!ktxTex->isCubemap) {
+    ktxTexture_Destroy(ktxTex);
+    throw std::runtime_error("Texture is not a cubemap: " + filename);
+  }
+
+  // Get texture dimensions
+  uint32_t width = ktxTex->baseWidth;
+  uint32_t height = ktxTex->baseHeight;
+  uint32_t mipLevels = ktxTex->numLevels;
+  uint32_t numFaces = ktxTex->numFaces;  // Should be 6 for cubemap
+
+  // Calculate total size for staging buffer
+  ktx_size_t totalSize = ktxTexture_GetDataSizeUncompressed(ktxTex);
+
+  // Create staging buffer (we can change below code to use KTX Vulkan Upload Features)
+  BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(totalSize);
+
+  // Copy texture data into staging buffer
+  // KTX stores data in a contiguous block, we can copy it all at once
+  bufferManager->updateBuffer(stagingBuffer, ktxTexture_GetData(ktxTex), totalSize);
+
+  // Setup buffer copy regions for each face including all of its miplevels
+  std::vector<VkBufferImageCopy> bufferCopyRegions;
+
+  // KTX stores cube faces in the order: +X, -X, +Y, -Y, +Z, -Z
+  // And mip levels are stored from base to smallest
+  for (uint32_t level = 0; level < mipLevels; level++) {
+    ktx_size_t levelOffset;
+    ktxTexture_GetImageOffset(ktxTex, level, 0, 0, &levelOffset);
+
+    for (uint32_t face = 0; face < numFaces; face++) {
+      ktx_size_t faceOffset;
+      ktxTexture_GetImageOffset(ktxTex, level, 0, face, &faceOffset);
+
+      VkBufferImageCopy bufferCopyRegion = {};
+      bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      bufferCopyRegion.imageSubresource.mipLevel = level;
+      bufferCopyRegion.imageSubresource.baseArrayLayer = face;
+      bufferCopyRegion.imageSubresource.layerCount = 1;
+      bufferCopyRegion.imageExtent.width = std::max(1u, width >> level);
+      bufferCopyRegion.imageExtent.height = std::max(1u, height >> level);
+      bufferCopyRegion.imageExtent.depth = 1;
+      bufferCopyRegion.bufferOffset = faceOffset;
+
+      bufferCopyRegions.push_back(bufferCopyRegion);
+    }
+  }
+
+  // Create texture
+  Texture texture;
+  InitCubemapTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mipLevels);
+
+  // Change image transition
+  auto cmdBuffer = cmdUtils->beginSingleTimeCommands();
+  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, cmdBuffer);
+
+  // Copy the cube map faces from the staging buffer to the optimal tiled image
+  vkCmdCopyBufferToImage(cmdBuffer, stagingBuffer.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(bufferCopyRegions.size()),
+                         bufferCopyRegions.data());
+
+  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, cmdBuffer);
+  cmdUtils->endSingleTimeCommands(cmdBuffer);
+
+  // Create sampler
+  TextureSampler samplerSetting{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  texture.sampler = createTextureSampler(samplerSetting, static_cast<float>(mipLevels));
+
+  // Create view
+  texture.imageView = createCubemapImageView(texture.image, texture.format, mipLevels);
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
+
+  // Clean up KTX texture
+  ktxTexture_Destroy(ktxTex);
+
+  // Clean up staging buffer (assuming your buffer manager handles this)
+  bufferManager->destroyBuffer(stagingBuffer);
+
+  return texture;
+}

@@ -27,7 +27,21 @@ void PBRIBLScene::loadAssets() {
       spdlog::warn("Unsupported extension {}detected. Scene may not work or display as intended", ext);
     }
   }
+  modelManager->destroyModel(models.skybox);
+  models.skybox = modelManager->createModelFromFile(std::string(MODEL_DIR) + "skybox/box.gltf");
+  loadEnviroemnt(std::string(TEXTURE_DIR) + "papermill.ktx");
   // TODO: load envmap
+}
+
+void PBRIBLScene::loadEnviroemnt(std::string& filename) {
+  spdlog::info("Loading environment from {}", filename);
+  if (textures.environmentCube.image) {
+    textureManager->destroyTexture(textures.environmentCube);
+    textureManager->destroyTexture(textures.irradianceCube);
+    textureManager->destroyTexture(textures.prefilteredCube);
+  }
+  textureManager->loadHDRCubemap(filename, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+  // generateCubemaps();
 }
 
 void PBRIBLScene::createMaterialBuffer() {
@@ -122,57 +136,15 @@ void PBRIBLScene::createMeshDataBuffer() {
 }
 
 void PBRIBLScene::generateBRDFLUT() {
+  // image
   const VkFormat format = VK_FORMAT_R16G16_SFLOAT;
   const int32_t dim = 512;
-  // Image
-  VkImageCreateInfo imageCI{};
-  imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  imageCI.imageType = VK_IMAGE_TYPE_2D;
-  imageCI.format = format;
-  imageCI.extent.width = dim;
-  imageCI.extent.height = dim;
-  imageCI.extent.depth = 1;
-  imageCI.mipLevels = 1;
-  imageCI.arrayLayers = 1;
-  imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
-  imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
-  imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-  vkCreateImage(device, &imageCI, nullptr, &textures.lutBrdf.image);
-  VkMemoryRequirements memReqs;
-  vkGetImageMemoryRequirements(device, textures.lutBrdf.image, &memReqs);
-  VkMemoryAllocateInfo memAllocInfo{};
-  memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  memAllocInfo.allocationSize = memReqs.size;
-  memAllocInfo.memoryTypeIndex = bufferManager->findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  vkAllocateMemory(device, &memAllocInfo, nullptr, &textures.lutBrdf.memory);
-  vkBindImageMemory(device, textures.lutBrdf.image, textures.lutBrdf.memory, 0);
-
-  // View
-  VkImageViewCreateInfo viewCI{};
-  viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  viewCI.format = format;
-  viewCI.subresourceRange = {};
-  viewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  viewCI.subresourceRange.levelCount = 1;
-  viewCI.subresourceRange.layerCount = 1;
-  viewCI.image = textures.lutBrdf.image;
-  vkCreateImageView(device, &viewCI, nullptr, &textures.lutBrdf.imageView);
-
-  // Sampler
-  VkSamplerCreateInfo samplerCI{};
-  samplerCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  samplerCI.magFilter = VK_FILTER_LINEAR;
-  samplerCI.minFilter = VK_FILTER_LINEAR;
-  samplerCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  samplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  samplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  samplerCI.minLod = 0.0f;
-  samplerCI.maxLod = 1.0f;
-  samplerCI.maxAnisotropy = 1.0f;
-  samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-  vkCreateSampler(device, &samplerCI, nullptr, &textures.lutBrdf.sampler);
+  textureManager->InitTexture(textures.lutBrdf, dim, dim, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
+  textureManager->createImageView(textures.lutBrdf.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
+  TextureManager::TextureSampler sampler{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  textures.lutBrdf.sampler = textureManager->createTextureSampler(sampler, 1.0f, 1.0f);
 
   // FB, Att, RP, Pipe, etc.
   VkAttachmentDescription attDesc{};
@@ -192,7 +164,8 @@ void PBRIBLScene::generateBRDFLUT() {
   subpassDescription.colorAttachmentCount = 1;
   subpassDescription.pColorAttachments = &colorReference;
 
-  // Use subpass dependencies for layout transitions
+  // dep0 Wait for any previous work to finish before we start writing to the color attachment
+  // dep1 Wait for our color attachment writes to finish before anyone else uses the image
   std::array<VkSubpassDependency, 2> dependencies;
   dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
   dependencies[0].dstSubpass = 0;
@@ -209,7 +182,7 @@ void PBRIBLScene::generateBRDFLUT() {
   dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
   dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-  // Create the actual renderpass
+  // Create the renderpass
   VkRenderPassCreateInfo renderPassCI{};
   renderPassCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
   renderPassCI.attachmentCount = 1;

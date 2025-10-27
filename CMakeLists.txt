@@ -8,6 +8,8 @@ if(MSVC)
     add_compile_options(/wd4996)
     add_compile_options(/wd4251)
 endif()
+enable_language(C)
+enable_language(CXX)
 
 add_subdirectory(engine)
 add_subdirectory(testbed)

@@ -141,6 +141,19 @@ class TextureManager {
       imageType = VK_IMAGE_TYPE_2D;
     }
   };
+  struct IBLTextures {
+    Texture enviromentCubemap;
+    Texture irradianceCubemap;
+    Texture prefilteredCubemap;
+  };
+  struct IBLSettings {
+    u32 enviromentSize = 2048;
+    u32 irradianceSize = 32;
+    u32 prefilteredSize = 512;
+    u32 prefilteredMipLevel = 5;
+    VkFormat hdrFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+    VkFormat ldrFormat = VK_FORMAT_R8G8B8A8_UNORM;
+  };
 
   struct TextureSampler {
     VkFilter magFilter;
@@ -168,7 +181,7 @@ class TextureManager {
   VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT, uint32_t levelCount = 1);
   VkSampler createTextureSampler(TextureSampler textureSampler = {VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT,
                                                                   VK_SAMPLER_ADDRESS_MODE_REPEAT},
-                                 float maxLod = 0.0f);
+                                 float maxLod = 0.0f, float maxAnisotropy = 0.0f);
   void InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                    uint32_t mipLevels = 1, VkSampleCountFlagBits numSamples = VK_SAMPLE_COUNT_1_BIT);
   void transitionImageLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer, uint32_t mipLevels = 1);
@@ -181,11 +194,11 @@ class TextureManager {
   Texture createTextureFromBuffer(void* data, uint32_t size, VkFormat format, uint32_t width, uint32_t height);
 
   // cube map
-  Texture createCubemapFromFiles(const std::array<std::string, 6>& faceFilepaths, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
   Texture createCubemapFromSingleFile(const std::string& filepath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
   VkImageView createCubemapImageView(VkImage image, VkFormat format, uint32_t levelCount = 1);
   void transitionCubemapLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer);
   void copyBufferToCubemapFace(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, uint32_t faceIndex, VkDeviceSize bufferOffset = 0, uint32_t miplevel = 0);
   void InitCubemapTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                           uint32_t mipLevels = 1);
+  Texture loadHDRCubemap(std::string& filename, VkFormat format, VkImageUsageFlags usage);
 };

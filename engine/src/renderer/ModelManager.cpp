@@ -47,8 +47,8 @@ ModelManager::Model ModelManager::createModelFromFile(const std::string& filenam
   for (auto& extension : model.extensions) {
     // If this model uses basis universal compressed textures, we need to transcode them
     if (extension == "KHR_texture_basisu") {
-      spdlog::info("Model uses KHR_texture_basisu, initializing basisu transcoder");
-      basist::basisu_transcoder_init();
+      spdlog::info("Model uses KHR_texture_basisu, KTX will handle transcoding");
+      // KTX library handles basis universal internally, no initialization needed
     }
   }
   // load texture,sampler, and materials
