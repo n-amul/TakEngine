@@ -936,7 +936,7 @@ TextureManager::Texture TextureManager::createDefault() {
 }
 void TextureManager::destroyTexture(Texture& texture) { texture = Texture(); }
 
-TextureManager::Texture TextureManager::loadHDRCubemap(std::string& filename, VkFormat format, VkImageUsageFlags usage) {
+TextureManager::Texture TextureManager::loadHDRCubemapTexture(std::string& filename, VkFormat format, VkImageUsageFlags usage) {
   // Load KTX texture
   ktxTexture* ktxTex = nullptr;
   KTX_error_code result = ktxTexture_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex);

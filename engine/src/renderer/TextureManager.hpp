@@ -200,5 +200,5 @@ class TextureManager {
   void copyBufferToCubemapFace(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, uint32_t faceIndex, VkDeviceSize bufferOffset = 0, uint32_t miplevel = 0);
   void InitCubemapTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
                           uint32_t mipLevels = 1);
-  Texture loadHDRCubemap(std::string& filename, VkFormat format, VkImageUsageFlags usage);
+  Texture loadHDRCubemapTexture(std::string& filename, VkFormat format, VkImageUsageFlags usage);
 };

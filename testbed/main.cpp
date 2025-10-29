@@ -4,6 +4,7 @@
 #include <exception>
 
 #include "scenes/ModelScene.hpp"
+#include "scenes/PBRIBLScene.hpp"
 #include "scenes/TriangleScene.hpp"
 #include "testing/ModelTest.hpp"
 
