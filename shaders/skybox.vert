@@ -1,20 +1,22 @@
 #version 450
 
-layout(binding = 0) uniform UniformBufferObject {
-    mat4 view;
-    mat4 proj;
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_shading_language_420pack : enable
+
+layout (location = 0) in vec3 inPos;
+layout (location = 1) in vec3 inNormal;
+layout (location = 2) in vec2 inUV;
+
+layout (binding = 0) uniform UBO 
+{
+	mat4 projection;
+	mat4 model;
 } ubo;
 
-layout(location = 0) in vec3 inPosition;
-layout(location = 0) out vec3 texCoords;
+layout (location = 0) out vec3 outUVW;
 
-void main() {
-    texCoords = normalize(inPosition);
-    
-    // Remove translation from view matrix and apply to position
-    vec4 pos = ubo.proj * ubo.view * vec4(inPosition, 1.0);
-    
-    // Set z to w to ensure the skybox is always at max depth
-    // gl_Position = pos.xyww;
-    gl_Position = vec4(pos.xy, pos.w, pos.w);
+void main() 
+{
+	outUVW = inPos;
+	gl_Position = ubo.projection * ubo.model * vec4(inPos.xyz, 1.0);
 }

@@ -1,7 +1,6 @@
 @echo off
 echo Compiling shaders...
 
-:: Automatically detect Vulkan SDK from environment variable
 if not defined VULKAN_SDK (
     echo ERROR: VULKAN_SDK environment variable not set!
     echo Please install Vulkan SDK from https://vulkan.lunarg.com/
@@ -32,6 +31,12 @@ echo Compiling pbr shaders...
 "%GLSLC%" pbr.vert -o "pbr.vert.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile pbr.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" pbrIbl.vert -o "pbrIbl.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile pbrIbl.vert
     pause
     exit /b 1
 )
@@ -99,6 +104,18 @@ if errorlevel 1 (
 "%GLSLC%" prefilterenvmap.frag -o "prefilterenvmap.frag.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile prefilterenvmap.frag
+    pause
+    exit /b 1
+)
+"%GLSLC%" material_pbr.frag -o "material_pbr.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile "material_pbr.frag
+    pause
+    exit /b 1
+)
+"%GLSLC%" material_unlit.frag -o "material_unlit.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile "material_unlit.frag
     pause
     exit /b 1
 )

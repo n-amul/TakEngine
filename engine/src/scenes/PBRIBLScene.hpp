@@ -126,7 +126,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
   // ============= Animation =============
   int32_t animationIndex = 0;
   float animationTimer = 0.0f;
-  bool animate = false;
+  bool animate = true;
 
   // ============= defines =============
   enum PBRWorkflows { PBR_WORKFLOW_METALLIC_ROUGHNESS = 0, PBR_WORKFLOW_SPECULAR_GLOSSINESS = 1 };
@@ -144,6 +144,8 @@ class TAK_API PBRIBLScene : public VulkanBase {
   void prepareUniformBuffers();
   void updateUniformData();
   void updateParams();
+  void updateMeshDataBuffer(uint32_t index);
   void setupDescriptors();
   void addPipelineSet(const std::string prefix, const std::string vertexShader, const std::string fragmentShader);
+  void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode);
 };

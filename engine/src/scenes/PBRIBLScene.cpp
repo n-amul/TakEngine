@@ -18,16 +18,154 @@ void PBRIBLScene::loadResources() {
 
 void PBRIBLScene::createPipeline() {
   // Skybox pipeline (background cube)
-  addPipelineSet("skybox", "skybox.vert.spv", "skybox.frag.spv");
+  addPipelineSet("skybox", std::string(SHADER_DIR) + "/skybox.vert.spv", std::string(SHADER_DIR) + "/skybox.frag.spv");
   // PBR pipelines
-  addPipelineSet("pbr", "pbr.vert.spv", "material_pbr.frag.spv");
+  addPipelineSet("pbr", std::string(SHADER_DIR) + "/pbr.vert.spv", std::string(SHADER_DIR) + "/material_pbr.frag.spv");
   // KHR_materials_unlit
-  addPipelineSet("unlit", "pbr.vert.spv", "material_unlit.frag.spv");
+  addPipelineSet("unlit", std::string(SHADER_DIR) + "/pbr.vert.spv", std::string(SHADER_DIR) + "/material_unlit.frag.spv");
 }
 
-void PBRIBLScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) {}
+void PBRIBLScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+  boundPipeline = VK_NULL_HANDLE;
+  // Render pass is already begun in base class recordCommandBuffer()
+  // Just need to bind pipeline and draw
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(swapChainExtent.width);
+  viewport.height = static_cast<float>(swapChainExtent.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
 
-void PBRIBLScene::updateScene(float deltaTime) {}
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swapChainExtent;
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+  // skybox render
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame].skybox, 0, nullptr);
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines["skybox"]);
+  const VkDeviceSize offsets[1] = {0};
+  for (tak::Node* node : models.skybox.nodes) {
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &models.skybox.vertices.buffer, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, models.skybox.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+    modelManager->drawNode(node, commandBuffer);
+  }
+  // scene render
+  boundPipeline = VK_NULL_HANDLE;
+  VkDeviceSize offsets_scene[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, &models.scene.vertices.buffer, offsets_scene);
+  if (models.scene.indices.buffer != VK_NULL_HANDLE) {
+    vkCmdBindIndexBuffer(commandBuffer, models.scene.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+  }
+
+  // Opaque primitives first
+  for (auto node : models.scene.nodes) {
+    renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_OPAQUE);
+  }
+  // Alpha masked primitives
+  for (auto node : models.scene.nodes) {
+    renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_MASK);
+  }
+  // Transparent primitives
+  // TODO: Correct depth sorting
+  for (auto node : models.scene.nodes) {
+    renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_BLEND);
+  }
+}
+void PBRIBLScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode) {
+  if (node->mesh) {
+    // Render mesh primitives
+    for (tak::Primitive* primitive : node->mesh->primitives) {
+      if (models.scene.materials[primitive->materialIndex].alphaMode == alphaMode) {
+        std::string pipelineName = "pbr";
+        std::string pipelineVariant = "";
+
+        if (models.scene.materials[primitive->materialIndex].unlit) {
+          pipelineName = "unlit";
+        }
+
+        // Material properties define if we e.g. need to bind a pipeline variant with culling disabled (double sided)
+        if (alphaMode == tak::Material::ALPHAMODE_BLEND) {
+          pipelineVariant = "_alpha_blending";
+        } else {
+          if (models.scene.materials[primitive->materialIndex].doubleSided) {
+            pipelineVariant = "_double_sided";
+          }
+        }
+        const VkPipeline pipeline = pipelines[pipelineName + pipelineVariant];
+
+        if (boundPipeline != pipeline) {
+          vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+          boundPipeline = pipeline;
+        }
+
+        const std::vector<VkDescriptorSet> descriptorsets = {
+            descriptorSets[currentFrame].scene,                              // set 0
+            models.scene.materials[primitive->materialIndex].descriptorSet,  // set 1
+            descriptorSetsMeshData[currentFrame],                            // set 2
+            descriptorSetMaterials                                           // set 3
+        };
+        vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, static_cast<uint32_t>(descriptorsets.size()), descriptorsets.data(), 0, NULL);
+
+        // Pass material index for this primitive using a push constant, the shader uses this to index into the material buffer
+        MeshPushConstantBlock pushConstantBlock{};
+        // @todo: index
+        pushConstantBlock.meshIndex = node->mesh->index;
+        pushConstantBlock.materialIndex = models.scene.materials[primitive->materialIndex].materialIndex;
+
+        vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshPushConstantBlock), &pushConstantBlock);
+
+        if (primitive->hasIndices) {
+          vkCmdDrawIndexed(cmdBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+        } else {
+          vkCmdDraw(cmdBuffer, primitive->vertexCount, 1, 0, 0);
+        }
+      }
+    }
+  };
+  for (auto child : node->children) {
+    renderNode(cmdBuffer, child, ImageIndex, alphaMode);
+  }
+}
+
+void PBRIBLScene::updateScene(float deltaTime) {
+  //  Update UBOs
+  updateUniformData();
+  updateParams();
+  //  update shader buffer
+  bufferManager->updateBuffer(uniformBuffers[currentFrame].scene, &sceneUboMatrices, sizeof(sceneUboMatrices), 0);
+  bufferManager->updateBuffer(uniformBuffers[currentFrame].params, &shaderValuesParams, sizeof(shaderValuesParams), 0);
+
+  // update animation and params
+  if ((animate) && (models.scene.animations.size() > 0)) {
+    animationTimer += deltaTime;
+    if (animationTimer > models.scene.animations[animationIndex].end) {
+      animationTimer -= models.scene.animations[animationIndex].end;
+    }
+    modelManager->updateAnimation(models.scene, animationIndex, animationTimer);
+    updateMeshDataBuffer(currentFrame);
+  }
+}
+void PBRIBLScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no push, use fixed size)
+  std::vector<ShaderMeshData> shaderMeshData;
+  std::map<uint32_t, ShaderMeshData> meshDataMap;
+  for (auto& node : models.scene.linearNodes) {
+    if (node->mesh) {
+      ShaderMeshData meshData{};
+      memcpy(meshData.jointMatrix, node->mesh->jointMatrix.data(), sizeof(glm::mat4) * MAX_NUM_JOINTS);
+      meshData.jointcount = node->mesh->jointcount;
+      meshData.matrix = node->mesh->matrix;
+      meshDataMap[node->mesh->index] = meshData;
+    }
+  }
+  // Convert map to vector in correct order
+  for (const auto& [idx, data] : meshDataMap) {
+    shaderMeshData.push_back(data);
+  }
+  VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
+  bufferManager->updateBuffer(shaderMeshDataBuffers[index], shaderMeshData.data(), bufferSize, 0);
+}
 
 void PBRIBLScene::loadAssets() {
   textures.empty = textureManager->createDefault();
@@ -378,6 +516,8 @@ void PBRIBLScene::addPipelineSet(const std::string prefix, const std::string ver
 
   // Pipelines
   std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+  shaderStages[0] = loadShader(vertexShader, VK_SHADER_STAGE_VERTEX_BIT);
+  shaderStages[1] = loadShader(fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT);
 
   VkGraphicsPipelineCreateInfo pipelineCI{};
   pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -393,9 +533,6 @@ void PBRIBLScene::addPipelineSet(const std::string prefix, const std::string ver
   pipelineCI.pDynamicState = &dynamicStateCI;
   pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
   pipelineCI.pStages = shaderStages.data();
-
-  shaderStages[0] = loadShader(vertexShader, VK_SHADER_STAGE_VERTEX_BIT);
-  shaderStages[1] = loadShader(fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT);
 
   VkPipeline pipeline{};
   // Default pipeline with back-face culling
@@ -534,7 +671,7 @@ void PBRIBLScene::generateBRDFLUT() {
   const int32_t dim = 512;
   textureManager->InitTexture(textures.lutBrdf, dim, dim, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
-  textureManager->createImageView(textures.lutBrdf.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
+  textures.lutBrdf.imageView = textureManager->createImageView(textures.lutBrdf.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
   TextureManager::TextureSampler sampler{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   textures.lutBrdf.sampler = textureManager->createTextureSampler(sampler, 1.0f, 1.0f);
@@ -664,8 +801,8 @@ void PBRIBLScene::generateBRDFLUT() {
   std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
   // Look-up-table (from BRDF) pipeline
-  auto vertcode = readFile("genbrdflut.vert.spv");
-  auto fragcode = readFile("genbrdflut.frag.spv");
+  auto vertcode = readFile(std::string(SHADER_DIR) + "/genbrdflut.vert.spv");
+  auto fragcode = readFile(std::string(SHADER_DIR) + "/genbrdflut.frag.spv");
   VkShaderModule vertShaderModule = createShaderModule(vertcode);
   VkShaderModule fragShaderModule = createShaderModule(fragcode);
 
@@ -1030,29 +1167,19 @@ void PBRIBLScene::generateCubemaps() {
     pipelineCI.stageCount = 2;
     pipelineCI.pStages = shaderStages.data();
     pipelineCI.renderPass = renderpass;
-    auto vertShaderModule = createShaderModule(readFile("filtercube.vert.spv"));
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main";
 
-    shaderStages[0] = vertShaderStageInfo;
-    VkShaderModule fragShaderModule;
+    shaderStages[0] = loadShader(std::string(SHADER_DIR) + "/filtercube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+
+    VkPipelineShaderStageCreateInfo fragShaderModule;
     switch (target) {
       case IRRADIANCE:
-        fragShaderModule = createShaderModule(readFile("irradiancecube.frag.spv"));
+        fragShaderModule = loadShader(std::string(SHADER_DIR) + "/irradiancecube.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         break;
       case PREFILTEREDENV:
-        fragShaderModule = createShaderModule(readFile("prefilterenvmap.frag.spv"));
+        fragShaderModule = loadShader(std::string(SHADER_DIR) + "/prefilterenvmap.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
         break;
     };
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-    shaderStages[1] = fragShaderStageInfo;
+    shaderStages[1] = fragShaderModule;
 
     VkPipeline pipeline;
     vkCreateGraphicsPipelines(device, nullptr, 1, &pipelineCI, nullptr, &pipeline);
@@ -1209,9 +1336,15 @@ void PBRIBLScene::generateCubemaps() {
     switch (target) {
       case IRRADIANCE:
         textures.irradianceCube = std::move(cubemap);
+        textures.irradianceCube.descriptor.imageView = textures.irradianceCube.imageView;
+        textures.irradianceCube.descriptor.sampler = textures.irradianceCube.sampler;
+        textures.irradianceCube.descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         break;
       case PREFILTEREDENV:
         textures.prefilteredCube = std::move(cubemap);
+        textures.prefilteredCube.descriptor.imageView = textures.prefilteredCube.imageView;
+        textures.prefilteredCube.descriptor.sampler = textures.prefilteredCube.sampler;
+        textures.prefilteredCube.descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         shaderValuesParams.prefilteredCubeMipLevels = static_cast<float>(numMips);
         break;
     };
@@ -1249,6 +1382,9 @@ void PBRIBLScene::updateUniformData() {
   sceneUboMatrices.model[1][1] = scale;
   sceneUboMatrices.model[2][2] = scale;
   sceneUboMatrices.model = glm::translate(sceneUboMatrices.model, translate);
+
+  // Rotate 90 degrees around X-axis to convert Y-up to Z-up
+  sceneUboMatrices.model = glm::rotate(sceneUboMatrices.model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
   // Shader requires camera position in world space
   glm::mat4 cv = glm::inverse(camera.getViewMatrix());
