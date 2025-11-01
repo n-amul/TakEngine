@@ -467,7 +467,7 @@ void ModelScene::updateScene(float deltaTime) {
   //  Update UBOs
   updateUniformData();
   updateParams();
-  //  update shader buffer (TODO: add mapped pointer inside the buffer for performance)
+  //  update shader buffer
   bufferManager->updateBuffer(uniformBuffers[currentFrame].scene, &uboMatrices, sizeof(uboMatrices), 0);
   bufferManager->updateBuffer(uniformBuffers[currentFrame].params, &shaderValuesParams, sizeof(shaderValuesParams), 0);
 

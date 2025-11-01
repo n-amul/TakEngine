@@ -13,9 +13,9 @@ class TAK_API PBRIBLScene : public VulkanBase {
  protected:
   // Required VulkanBase overrides
   void loadResources() override;
-  void createPipeline() override {};
-  void recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) override {};
-  void updateScene(float deltaTime) override {};
+  void createPipeline() override;
+  void recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) override;
+  void updateScene(float deltaTime) override;
   void cleanupResources() override;
   void onResize(int width, int height) override {};
 
@@ -55,7 +55,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
     glm::mat4 model;
     glm::mat4 view;
     glm::vec3 camPos;
-  } sceneUboMatrices, skyboxUnoMatrices;
+  } sceneUboMatrices, skyboxUboMatrices;
 
   // ============= Buffers =============
   struct UniformBufferSet {
@@ -141,4 +141,9 @@ class TAK_API PBRIBLScene : public VulkanBase {
   void createMeshDataBuffer();
   void generateBRDFLUT();
   void generateCubemaps();
+  void prepareUniformBuffers();
+  void updateUniformData();
+  void updateParams();
+  void setupDescriptors();
+  void addPipelineSet(const std::string prefix, const std::string vertexShader, const std::string fragmentShader);
 };

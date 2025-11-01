@@ -18,6 +18,7 @@ class CommandBufferUtils {
   }
 
  public:
+  // TODO: seperate creating cb and begin
   CommandBufferUtils(std::shared_ptr<VulkanContext> ctx) : context(ctx) {}
 
   VkCommandBuffer beginSingleTimeCommands() {

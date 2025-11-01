@@ -19,6 +19,7 @@ typedef double f64;
 // Boolean types
 typedef int b32;
 typedef bool b8;
+#define M_PI 3.14159265358979323846
 
 // Platform detection
 #if defined(_WIN32) || defined(_WIN64)
@@ -91,11 +92,11 @@ STATIC_ASSERT(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #define GLM_FORCE_INLINE
 #define GLM_FORCE_XYZW_ONLY
 
-#define VK_CHECK_RESULT(f)                                                                                          \
-  {                                                                                                                 \
-    VkResult res = (f);                                                                                             \
-    if (res != VK_SUCCESS) {                                                                                        \
-      std::cout << "Fatal : VkResult is \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << std::endl; \
-      assert(res == VK_SUCCESS);                                                                                    \
-    }                                                                                                               \
+#define VK_CHECK_RESULT(f)                                                              \
+  {                                                                                     \
+    VkResult res = (f);                                                                 \
+    if (res != VK_SUCCESS) {                                                            \
+      spdlog::info("Fatal : VkResult is {} in {} at line {}", res, __FILE__, __LINE__); \
+      assert(res == VK_SUCCESS);                                                        \
+    }                                                                                   \
   }

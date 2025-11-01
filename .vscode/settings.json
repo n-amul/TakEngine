@@ -86,7 +86,13 @@
         "xtree": "cpp",
         "xutility": "cpp",
         "stack": "cpp",
-        "source_location": "cpp"
+        "source_location": "cpp",
+        "any": "cpp",
+        "bitset": "cpp",
+        "cfenv": "cpp",
+        "complex": "cpp",
+        "shared_mutex": "cpp",
+        "typeindex": "cpp"
     },
     //formatting
     "[cpp]": {

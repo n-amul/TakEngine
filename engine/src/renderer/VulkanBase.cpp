@@ -802,6 +802,22 @@ void VulkanBase::cleanup() {
   glfwTerminate();
 }
 
+VkPipelineShaderStageCreateInfo VulkanBase::loadShader(std::string filename, VkShaderStageFlagBits shaderStage) {
+  auto code = readFile(filename);
+  VkPipelineShaderStageCreateInfo ShaderStageInfo{};
+  ShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  ShaderStageInfo.module = createShaderModule(code);
+  ShaderStageInfo.pName = "main";
+
+  if (shaderStage == VK_PIPELINE_STAGE_VERTEX_SHADER_BIT) {
+    ShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+  } else if (shaderStage == VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT) {
+    ShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  }
+
+  return ShaderStageInfo;
+}
+
 //-----------------------------------------------------------
 // Validation Layers
 //-----------------------------------------------------------

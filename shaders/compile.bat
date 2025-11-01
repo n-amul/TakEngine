@@ -72,6 +72,36 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+"%GLSLC%" genbrdflut.vert -o "genbrdflut.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile genbrdflut.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" genbrdflut.frag -o "genbrdflut.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile genbrdflut.frag
+    pause
+    exit /b 1
+)
+"%GLSLC%" filtercube.vert -o "filtercube.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile filtercube.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" irradiancecube.frag -o "irradiancecube.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile irradiancecube.frag
+    pause
+    exit /b 1
+)
+"%GLSLC%" prefilterenvmap.frag -o "prefilterenvmap.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile prefilterenvmap.frag
+    pause
+    exit /b 1
+)
 
 echo Compiling UI shaders...
 "%GLSLC%" ui.vert -o "ui.vert.spv"

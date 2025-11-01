@@ -41,6 +41,7 @@ class ModelManager {
   // Model management
   Model createModelFromFile(const std::string& filename, float scale = 1.0f);
   void updateAnimation(ModelManager::Model& model, int index, float time);
+  void drawNode(tak::Node* node, VkCommandBuffer cmdbuf);
   void destroyModel(Model& model);
 
  private:

@@ -505,6 +505,17 @@ void ModelManager::calculateBoundingBox(tak::Node* node, tak::Node* parent, Mode
   }
 }
 
+void ModelManager::drawNode(tak::Node* node, VkCommandBuffer cmdbuf) {
+  if (node->mesh) {
+    for (tak::Primitive* primitive : node->mesh->primitives) {
+      vkCmdDrawIndexed(cmdbuf, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+    }
+  }
+  for (auto& child : node->children) {
+    drawNode(child, cmdbuf);
+  }
+}
+
 void ModelManager::loadNode(tak::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, Model& model, const tinygltf::Model& gltfModel, tak::LoaderInfo& loaderInfo,
                             float globalscale) {
   tak::Node* newNode = new tak::Node{};

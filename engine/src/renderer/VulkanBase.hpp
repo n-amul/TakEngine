@@ -227,6 +227,8 @@ class TAK_API VulkanBase {
       // Right face (x = 1)
       2, 6, 7, 7, 3, 2};
 
+  VkPipelineShaderStageCreateInfo loadShader(std::string filename, VkShaderStageFlagBits shaderStage);
+
  private:
   // Validation layer setup
   void setupDebugMessenger();
