@@ -103,14 +103,4 @@ class TAK_API TriangleScene : public VulkanBase {
   void createUniformBuffers();
   void updateUniformBuffer(f32 deltatime);
   void createTextures();
-  void createModelTextures(const std::string& filename);
-
-  // skybox
-  void createSkyboxPipeline();
-  void createSkyboxVertexBuffer();
-  void createSkyboxIndexBuffer();
-  void createSkyboxDescriptorSetLayout();
-  void createSkyboxUniformBuffers();
-  void updateSkyboxUniformBuffer();
-  void createSkyboxTexture();
 };

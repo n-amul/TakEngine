@@ -131,14 +131,4 @@ class TAK_API ModelScene : public VulkanBase {
   void updateParams();
 
   void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t cbIndex, tak::Material::AlphaMode alphaMode);
-
-  // skybox
-  void createSkyboxPipeline();
-  void createSkyboxVertexBuffer();
-  void createSkyboxIndexBuffer();
-  void createSkyboxDescriptorSetLayout();
-  void createSkyboxUniformBuffers();
-  void updateSkyboxUniformBuffer();
-  void createSkyboxTexture();
-  void createSkyboxDescriptorSets();
 };

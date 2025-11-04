@@ -491,7 +491,6 @@ void PBRIBLScene::addPipelineSet(const std::string prefix, const std::string ver
 
   VkPipelineMultisampleStateCreateInfo multisampleStateCI{};
   multisampleStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-
   if (multisampling) {
     multisampleStateCI.rasterizationSamples = msaaSamples;
   }
