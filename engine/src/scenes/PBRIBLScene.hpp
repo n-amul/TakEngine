@@ -22,16 +22,14 @@ class TAK_API PBRIBLScene : public VulkanBase {
  private:
   // ============= Scene Data =============
   struct Textures {
-    TextureManager::Texture environmentCube;
     TextureManager::Texture empty;
-    TextureManager::Texture lutBrdf;
-    TextureManager::Texture irradianceCube;
-    TextureManager::Texture prefilteredCube;
   } textures;
+
   struct Models {
     ModelManager::Model scene;
     ModelManager::Model skybox;
   } models;
+
   // ============= Lighting =============
   struct LightSource {
     glm::vec3 color = glm::vec3(1.0f);
@@ -84,6 +82,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
     float emissiveStrength;
   };
   BufferManager::Buffer shaderMaterialBuffer;
+
   // Mesh data SSBO (per-mesh transforms, skinning)
   struct alignas(16) ShaderMeshData {
     glm::mat4 matrix;
@@ -91,6 +90,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
     uint32_t jointcount{0};
   };
   std::vector<BufferManager::Buffer> shaderMeshDataBuffers;  // One per frame
+
   // ============= Descriptors =============
   // Descriptor layouts
   struct DescriptorSetLayouts {
@@ -99,6 +99,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
     VkDescriptorSetLayout materialBuffer{VK_NULL_HANDLE};  // SSBO with all material data
     VkDescriptorSetLayout meshDataBuffer{VK_NULL_HANDLE};  // SSBO with all mesh data
   } descriptorSetLayouts;
+
   // Descriptor sets
   struct DescriptorSets {
     VkDescriptorSet scene;
@@ -116,6 +117,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
     int32_t meshIndex;
     int32_t materialIndex;
   };
+
   // Pipeline
   VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
   std::unordered_map<std::string, VkPipeline> pipelines;
@@ -136,11 +138,9 @@ class TAK_API PBRIBLScene : public VulkanBase {
 
   // ============= Private Methods =============
   void loadAssets();
-  void loadEnviroment(std::string& filename);
+  void loadSceneEnvironment(std::string& filename);
   void createMaterialBuffer();
   void createMeshDataBuffer();
-  void generateBRDFLUT();
-  void generateCubemaps();
   void prepareUniformBuffers();
   void updateUniformData();
   void updateParams();

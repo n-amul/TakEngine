@@ -1025,6 +1025,5 @@ TextureManager::Texture TextureManager::loadHDRCubemapTexture(std::string& filen
 
   // Clean up staging buffer (assuming your buffer manager handles this)
   bufferManager->destroyBuffer(stagingBuffer);
-
   return texture;
 }

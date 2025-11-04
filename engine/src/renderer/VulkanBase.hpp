@@ -91,6 +91,13 @@ class TAK_API VulkanBase {
   // Input handling
   void processInput(float deltaTime);
 
+  // PBR Environment methods
+  void initializePBREnvironment();
+  void generateBRDFLUT();
+  void generateCubemaps();
+  void loadEnvironment(std::string& filename);
+  void cleanupPBREnvironment();
+
   // Protected members accessible to derived classes
   GLFWwindow* window = nullptr;
   u32 window_width = 1920;
@@ -151,6 +158,19 @@ class TAK_API VulkanBase {
   double lastX = 0.0;
   double lastY = 0.0;
   bool mouseCaptured = true;  // Start with mouse captured
+
+  // PBR Environment Resources (shared across scenes)
+  struct PBREnvironment {
+    TextureManager::Texture environmentCube;  // HDR environment cubemap
+    TextureManager::Texture irradianceCube;   // Pre-computed irradiance for diffuse IBL
+    TextureManager::Texture prefilteredCube;  // Pre-filtered environment for specular IBL
+    TextureManager::Texture lutBrdf;          // BRDF lookup table
+    float prefilteredCubeMipLevels = 0.0f;    // Number of mip levels in prefiltered cube
+    bool isInitialized = false;
+  } pbrEnvironment;
+
+  // For skybox generation in generateCubemaps
+  ModelManager::Model tempSkyboxModel;
 
   // Validation layers
 #ifdef NDEBUG
