@@ -510,7 +510,7 @@ void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
   VkDeviceSize offsets[] = {0};
 
-  // draw skybox:
+  // draw skybox TODO: fix shader to ensure depth to maximum (1.0) so we can draw after anyobjs
   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 1,
                           &skyboxDescriptorSets[currentFrame], 0, nullptr);
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);

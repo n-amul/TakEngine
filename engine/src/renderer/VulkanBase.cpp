@@ -1058,7 +1058,8 @@ void VulkanBase::loadEnvironment(std::string& filename) {
 
   // Load HDR cubemap texture
   pbrEnvironment.environmentCube = textureManager->createCubemapFromEquirectangular(filename);
-
+  // pbrEnvironment.environmentCube =
+  // textureManager->createCubemapFromSingleFile(std::string(TEXTURE_DIR) + "/skybox/cubemap.png");
   spdlog::info("Environment loaded: {}", pbrEnvironment.environmentCube.image != VK_NULL_HANDLE);
   spdlog::info("Environment is cubemap: {}", pbrEnvironment.environmentCube.isCubemap());
 

@@ -184,6 +184,32 @@ class TAK_API VulkanBase {
   const std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
   VkPipelineShaderStageCreateInfo loadShader(std::string filename, VkShaderStageFlagBits shaderStage);
+  // cube
+  struct SkyboxVertex {
+    glm::vec3 pos;
+  };
+  const std::vector<SkyboxVertex> skyboxVertices = {
+      {{-1.0f, -1.0f, -1.0f}},  // 0: left-back-bottom
+      {{-1.0f, 1.0f, -1.0f}},   // 1: left-front-bottom
+      {{1.0f, 1.0f, -1.0f}},    // 2: right-front-bottom
+      {{1.0f, -1.0f, -1.0f}},   // 3: right-back-bottom
+      {{-1.0f, -1.0f, 1.0f}},   // 4: left-back-top
+      {{-1.0f, 1.0f, 1.0f}},    // 5: left-front-top
+      {{1.0f, 1.0f, 1.0f}},     // 6: right-front-top
+      {{1.0f, -1.0f, 1.0f}}     // 7: right-back-top
+  };
+
+  const std::vector<uint16_t> skyboxIndices = {0, 1, 2, 2, 3, 0,
+
+                                               4, 7, 6, 6, 5, 4,
+
+                                               0, 3, 7, 7, 4, 0,
+
+                                               1, 5, 6, 6, 2, 1,
+
+                                               0, 4, 5, 5, 1, 0,
+
+                                               2, 6, 7, 7, 3, 2};
 
  private:
   // Validation layer setup
@@ -191,8 +217,10 @@ class TAK_API VulkanBase {
   bool checkValidationLayerSupport();
 
   // Callbacks
-  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
+  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                      VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                                      void* pUserData);
 
   static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);

@@ -21,9 +21,11 @@ void ModelScene::prepareUniformBuffers() {
   for (auto& uniformBuffer : uniformBuffers) {
     int size = 0;
     uniformBuffer.scene =
-        bufferManager->createBuffer(sizeof(uboMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
-    uniformBuffer.params = bufferManager->createBuffer(sizeof(shaderValuesParams), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+        bufferManager->createBuffer(sizeof(uboMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    uniformBuffer.params =
+        bufferManager->createBuffer(sizeof(shaderValuesParams), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
   updateUniformData();
 }
@@ -55,12 +57,10 @@ void ModelScene::updateUniformData() {
   uboMatrices.camPos = glm::vec3(cv[3]);
 }
 
-void ModelScene::updateParams() {
-  // shaderValuesParams.lightDir = glm::vec4(sin(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), sin(glm::radians(lightSource.rotation.y)),
-  //                                         cos(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), 0.0f);
-}
+void ModelScene::updateParams() {}
 
-void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode) {
+void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex,
+                            tak::Material::AlphaMode alphaMode) {
   if (node->mesh) {
     // Render mesh primitives
     for (tak::Primitive* primitive : node->mesh->primitives) {
@@ -95,15 +95,18 @@ void ModelScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t
             descriptorSetsMeshData[currentFrame],                     // set 2
             descriptorSetMaterials                                    // set 3
         };
-        vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, static_cast<uint32_t>(descriptorsets.size()), descriptorsets.data(), 0, NULL);
+        vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
+                                static_cast<uint32_t>(descriptorsets.size()), descriptorsets.data(), 0, NULL);
 
-        // Pass material index for this primitive using a push constant, the shader uses this to index into the material buffer
+        // Pass material index for this primitive using a push constant, the shader uses this to index into the material
+        // buffer
         MeshPushConstantBlock pushConstantBlock{};
         // @todo: index
         pushConstantBlock.meshIndex = node->mesh->index;
         pushConstantBlock.materialIndex = scene.materials[primitive->materialIndex].materialIndex;
 
-        vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MeshPushConstantBlock), &pushConstantBlock);
+        vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(MeshPushConstantBlock), &pushConstantBlock);
 
         if (primitive->hasIndices) {
           vkCmdDrawIndexed(cmdBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
@@ -143,14 +146,17 @@ void ModelScene::createMaterialBuffer() {
       shaderMaterial.baseColorFactor = material.baseColorFactor;
       shaderMaterial.metallicFactor = material.metallicFactor;
       shaderMaterial.roughnessFactor = material.roughnessFactor;
-      shaderMaterial.physicalDescriptorTextureSet = material.metallicRoughnessTextureIndex != UINT32_MAX ? material.texCoordSets.metallicRoughness : -1;
+      shaderMaterial.physicalDescriptorTextureSet =
+          material.metallicRoughnessTextureIndex != UINT32_MAX ? material.texCoordSets.metallicRoughness : -1;
       shaderMaterial.colorTextureSet = material.baseColorTextureIndex != UINT32_MAX ? material.texCoordSets.baseColor : -1;
     } else {
       if (material.pbrWorkflows.specularGlossiness) {
         // Specular glossiness workflow
         shaderMaterial.workflow = static_cast<float>(PBR_WORKFLOW_SPECULAR_GLOSSINESS);
-        shaderMaterial.physicalDescriptorTextureSet = material.extension.specularGlossinessTextureIndex != UINT32_MAX ? material.texCoordSets.specularGlossiness : -1;
-        shaderMaterial.colorTextureSet = material.extension.diffuseTextureIndex != UINT32_MAX ? material.texCoordSets.baseColor : -1;
+        shaderMaterial.physicalDescriptorTextureSet =
+            material.extension.specularGlossinessTextureIndex != UINT32_MAX ? material.texCoordSets.specularGlossiness : -1;
+        shaderMaterial.colorTextureSet =
+            material.extension.diffuseTextureIndex != UINT32_MAX ? material.texCoordSets.baseColor : -1;
         shaderMaterial.diffuseFactor = material.extension.diffuseFactor;
         shaderMaterial.specularFactor = glm::vec4(material.extension.specularFactor, 1.0f);
       }
@@ -159,7 +165,8 @@ void ModelScene::createMaterialBuffer() {
   }
   // init shaderMaterialBuffer
   VkDeviceSize bufferSize = shaderMaterials.size() * sizeof(ShaderMaterial);
-  shaderMaterialBuffer = bufferManager->createGPULocalBuffer(shaderMaterials.data(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  shaderMaterialBuffer = bufferManager->createGPULocalBuffer(
+      shaderMaterials.data(), bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
   // Update descriptor
   shaderMaterialBuffer.descriptor.buffer = shaderMaterialBuffer.buffer;
@@ -189,7 +196,8 @@ void ModelScene::createMeshDataBuffer() {
     // create buffer
     VkDeviceSize bufferSize = shaderMeshData.size() * sizeof(ShaderMeshData);
     shaderMeshDataBuffer =
-        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     bufferManager->updateBuffer(shaderMeshDataBuffer, shaderMeshData.data(), bufferSize, 0);
     // Update descriptor
     shaderMeshDataBuffer.descriptor.buffer = shaderMeshDataBuffer.buffer;
@@ -226,12 +234,13 @@ void ModelScene::setupDescriptors() {
   // Material buffer: 1 storage buffer (shared)
   uint32_t materialStorageBufferCount = 1;
 
-  std::vector<VkDescriptorPoolSize> poolSizes = {// UBOs
-                                                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sceneUBOCount + (meshCount * imageCount)},
-                                                 // Image samplers
-                                                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, materialImageSamplerCount},
-                                                 // Storage buffers: mesh data + material buffer
-                                                 VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshDataStorageBufferCount + materialStorageBufferCount}};
+  std::vector<VkDescriptorPoolSize> poolSizes = {
+      // UBOs
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sceneUBOCount + (meshCount * imageCount)},
+      // Image samplers
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, materialImageSamplerCount},
+      // Storage buffers: mesh data + material buffer
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, meshDataStorageBufferCount + materialStorageBufferCount}};
 
   // to make sure we have enough size
   for (auto& poolSize : poolSizes) {
@@ -315,11 +324,18 @@ void ModelScene::setupDescriptors() {
       descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayouts.material;
       descriptorSetAllocInfo.descriptorSetCount = 1;
       vkAllocateDescriptorSets(device, &descriptorSetAllocInfo, &material.descriptorSet);
-      auto normalDescriptor = material.normalTextureIndex != UINT32_MAX ? scene.textures[material.normalTextureIndex].descriptor : emptyTexture.descriptor;
-      auto occlusionDescriptor = material.occlusionTextureIndex != UINT32_MAX ? scene.textures[material.occlusionTextureIndex].descriptor : emptyTexture.descriptor;
-      auto emissiveDescriptor = material.emissiveTextureIndex != UINT32_MAX ? scene.textures[material.emissiveTextureIndex].descriptor : emptyTexture.descriptor;
+      auto normalDescriptor = material.normalTextureIndex != UINT32_MAX
+                                  ? scene.textures[material.normalTextureIndex].descriptor
+                                  : emptyTexture.descriptor;
+      auto occlusionDescriptor = material.occlusionTextureIndex != UINT32_MAX
+                                     ? scene.textures[material.occlusionTextureIndex].descriptor
+                                     : emptyTexture.descriptor;
+      auto emissiveDescriptor = material.emissiveTextureIndex != UINT32_MAX
+                                    ? scene.textures[material.emissiveTextureIndex].descriptor
+                                    : emptyTexture.descriptor;
 
-      std::vector<VkDescriptorImageInfo> imageDescriptors = {emptyTexture.descriptor, emptyTexture.descriptor, normalDescriptor, occlusionDescriptor, emissiveDescriptor};
+      std::vector<VkDescriptorImageInfo> imageDescriptors = {emptyTexture.descriptor, emptyTexture.descriptor,
+                                                             normalDescriptor, occlusionDescriptor, emissiveDescriptor};
 
       if (material.pbrWorkflows.metallicRoughness) {
         if (material.baseColorTextureIndex != UINT32_MAX) {
@@ -544,7 +560,8 @@ void ModelScene::createModelPipeline(const std::string& prefix) {
 
   // Color blending
   VkPipelineColorBlendAttachmentState blendAttachmentState{};
-  blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachmentState.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
   blendAttachmentState.blendEnable = VK_FALSE;
 
   VkPipelineColorBlendStateCreateInfo colorBlending{};
@@ -626,7 +643,8 @@ void ModelScene::createModelPipeline(const std::string& prefix) {
   // Alpha blending
   rasterizer.cullMode = VK_CULL_MODE_NONE;
   blendAttachmentState.blendEnable = VK_TRUE;
-  blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachmentState.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
   blendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
   blendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   blendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
