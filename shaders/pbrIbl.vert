@@ -7,6 +7,7 @@ layout (location = 3) in vec2 inUV1;
 layout (location = 4) in uvec4 inJoint0;
 layout (location = 5) in vec4 inWeight0;
 layout (location = 6) in vec4 inColor0;
+layout (location = 7) in vec4 inTangent;
 
 layout (set = 0, binding = 0) uniform UBO 
 {

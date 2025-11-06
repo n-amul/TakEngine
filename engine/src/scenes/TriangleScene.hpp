@@ -78,17 +78,25 @@ class TAK_API TriangleScene : public VulkanBase {
   BufferManager::Buffer indexBuffer;
   std::vector<BufferManager::Buffer> uniformBuffers;
   std::vector<void*> uniformBuffersMapped;
-
   TextureManager::Texture rectTexture;
-  std::vector<TextureManager::Texture> textures;
+  // skybox
+  ModelManager::Model skybox;
+  VkPipeline skyboxPipeline = VK_NULL_HANDLE;
+  VkPipelineLayout skyboxPipelineLayout = VK_NULL_HANDLE;
+  VkDescriptorSetLayout skyboxDescriptorSetLayout = VK_NULL_HANDLE;
+  std::vector<VkDescriptorSet> skyboxDescriptorSets;
+  std::vector<BufferManager::Buffer> skyboxUniformBuffers;
+  std::vector<void*> skyboxUniformBuffersMapped;
+  void createSkyboxPipeline();
 
-  //+Z = up, +X = right, +Y = forward (blender, maya)
+  //+Z = up, +X = right, +Y = forward
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
-  const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-                                        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+  const std::vector<Vertex> vertices = {
+      {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+      {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 
-                                        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}, {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-                                        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},   {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}};
+      {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}, {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+      {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},   {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}};
 
   f32 rotationAngle = 0.0f;
   f32 totalTime = 0.0f;
@@ -99,7 +107,6 @@ class TAK_API TriangleScene : public VulkanBase {
   void createDescriptorPool();
   void createDescriptorSetLayout();
   void createDescriptorSets();
-  void createSkyboxDescriptorSets();
   void createUniformBuffers();
   void updateUniformBuffer(f32 deltatime);
   void createTextures();

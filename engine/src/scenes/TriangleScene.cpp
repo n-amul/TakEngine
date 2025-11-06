@@ -14,11 +14,26 @@ TriangleScene::TriangleScene() {
   title = "Vulkan Triangle Scene";
   name = "TriangleScene";
 }
+void TriangleScene::loadResources() {
+  initializePBREnvironment();
+  loadEnvironment(std::string(TEXTURE_DIR) + "/skybox/workshop.hdr");
+  spdlog::info("Loading triangle resources");
+  // scene objs
+  createDescriptorSetLayout();
+  createTextures();
+  createVertexBuffer();
+  createIndexBuffer();
+  createUniformBuffers();
+
+  createDescriptorPool();
+  createDescriptorSets();
+}
 
 void TriangleScene::createPipeline() {
   spdlog::info("Creating triangle pipeline");
-  VkPipelineShaderStageCreateInfo shaderStages[] = {loadShader(std::string(SHADER_DIR) + "/triangle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
-                                                    loadShader(std::string(SHADER_DIR) + "/triangle.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+  VkPipelineShaderStageCreateInfo shaderStages[] = {
+      loadShader(std::string(SHADER_DIR) + "/triangle.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+      loadShader(std::string(SHADER_DIR) + "/triangle.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
   // Vertex input configuration
   auto bindingDescription = Vertex::getBindingDescription();
@@ -66,7 +81,8 @@ void TriangleScene::createPipeline() {
 
   // Color blending
   VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-  colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  colorBlendAttachment.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
   colorBlendAttachment.blendEnable = VK_FALSE;
   colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
   colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
@@ -144,18 +160,6 @@ void TriangleScene::createPipeline() {
 
   spdlog::info("Triangle pipeline created successfully");
 }
-void TriangleScene::loadResources() {
-  spdlog::info("Loading triangle resources");
-  // scene objs
-  createDescriptorSetLayout();
-  createTextures();
-  createVertexBuffer();
-  createIndexBuffer();
-  createUniformBuffers();
-
-  createDescriptorPool();
-  createDescriptorSets();
-}
 
 void TriangleScene::createVertexBuffer() {
   VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
@@ -167,8 +171,9 @@ void TriangleScene::createIndexBuffer() {
   indexBuffer = bufferManager->createGPULocalBuffer(indices.data(), bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 void TriangleScene::createDescriptorPool() {
-  std::array<VkDescriptorPoolSize, 2> poolSizes = {VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2)},
-                                                   VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2)}};
+  std::array<VkDescriptorPoolSize, 2> poolSizes = {
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2)},
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2)}};
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -229,13 +234,11 @@ void TriangleScene::createDescriptorSets() {
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    if (textures.size()) {
-      imageInfo.imageView = textures[1].imageView;
-      imageInfo.sampler = textures[1].sampler;
-    } else {
-      imageInfo.imageView = rectTexture.imageView;
-      imageInfo.sampler = rectTexture.sampler;
-    }
+    // texture passin
+
+    imageInfo.imageView = rectTexture.imageView;
+    imageInfo.sampler = rectTexture.sampler;
+
     std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
     descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -265,7 +268,8 @@ void TriangleScene::createUniformBuffers() {
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     uniformBuffers[i] =
-        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkMapMemory(device, uniformBuffers[i].memory, 0, bufferSize, 0, &uniformBuffersMapped[i]);
   }
 }
@@ -283,7 +287,9 @@ void TriangleScene::updateUniformBuffer(f32 deltatime) {
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
 }
 
-void TriangleScene::createTextures() { rectTexture = textureManager->createTextureFromFile(std::string(TEXTURE_DIR) + "/cuteCat.jpg"); }
+void TriangleScene::createTextures() {
+  rectTexture = textureManager->createTextureFromFile(std::string(TEXTURE_DIR) + "/cuteCat.jpg");
+}
 
 void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
   // Note: Render pass is already begun in base class recordCommandBuffer()
@@ -310,7 +316,8 @@ void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t
   VkBuffer vertexBuffers[] = {vertexBuffer.buffer};
   vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
   vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+                          &descriptorSets[currentFrame], 0, nullptr);
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 }
 
@@ -325,9 +332,6 @@ void TriangleScene::cleanupResources() {
   spdlog::info("Cleaning up triangle resources");
   // clean up texture resources
   textureManager->destroyTexture(rectTexture);
-  for (auto& texture : textures) {
-    textureManager->destroyTexture(texture);
-  }
 
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -351,4 +355,5 @@ void TriangleScene::cleanupResources() {
   pipelineLayout = VK_NULL_HANDLE;
 
   spdlog::info("Triangle resources cleaned up");
+  cleanupPBREnvironment();
 }

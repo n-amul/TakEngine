@@ -6,12 +6,16 @@
 
 #include <cmath>
 #include <fstream>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
 
 #include "TextureManager.hpp"
 
-void TextureManager::InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-                                 VkMemoryPropertyFlags properties, uint32_t mipLevels, VkSampleCountFlagBits numSamples) {
+void TextureManager::InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+                                 VkImageUsageFlags usage, VkMemoryPropertyFlags properties, uint32_t mipLevels,
+                                 VkSampleCountFlagBits numSamples) {
   // Initialize texture properties
   texture.device = context->device;
   texture.extent = {width, height, 1};
@@ -55,7 +59,8 @@ void TextureManager::InitTexture(Texture& texture, uint32_t width, uint32_t heig
   vkBindImageMemory(context->device, texture.image, texture.memory, 0);
 }
 
-void TextureManager::transitionImageLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer, uint32_t mipLevels) {
+void TextureManager::transitionImageLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout,
+                                           VkCommandBuffer commandBuffer, uint32_t mipLevels) {
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
   barrier.oldLayout = oldLayout;
@@ -150,7 +155,8 @@ VkSampler TextureManager::createTextureSampler(TextureSampler textureSampler, fl
   return sampler;
 }
 
-VkImageView TextureManager::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t levelCount) {
+VkImageView TextureManager::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags,
+                                            uint32_t levelCount) {
   VkImageViewCreateInfo viewInfo{};
   viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   viewInfo.image = image;
@@ -170,7 +176,8 @@ VkImageView TextureManager::createImageView(VkImage image, VkFormat format, VkIm
   return imageView;
 }
 
-void TextureManager::copyBufferToImage(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, VkDeviceSize bufferOffset, uint32_t miplevel, VkExtent3D extent) {
+void TextureManager::copyBufferToImage(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer,
+                                       VkDeviceSize bufferOffset, uint32_t miplevel, VkExtent3D extent) {
   VkBufferImageCopy region{};
   region.bufferOffset = bufferOffset;
   region.bufferRowLength = 0;
@@ -219,7 +226,8 @@ TextureManager::Texture TextureManager::createTextureFromFile(const std::string&
   copyBufferToImage(texture, stagingBuffer.buffer, commandBuffer);
   // From: "Optimized for receiving data" → To: "Optimized for shader
   // sampling"
-  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        commandBuffer);
   cmdUtils->endSingleTimeCommands(commandBuffer);
 
   // Create imageview and sampler
@@ -233,7 +241,8 @@ TextureManager::Texture TextureManager::createTextureFromFile(const std::string&
   return texture;
 }
 
-TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinygltf::Image& gltfImage, std::string path, TextureSampler textureSampler, VkQueue copyQueue) {
+TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinygltf::Image& gltfImage, std::string path,
+                                                                   TextureSampler textureSampler, VkQueue copyQueue) {
   Texture texture;
   spdlog::info("Creating texture from glTF image: {}", gltfImage.name);
 
@@ -252,7 +261,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     const std::string filename = path + "/" + gltfImage.uri;
 
     ktxTexture2* ktxTex;
-    KTX_error_code result = ktxTexture2_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex);
+    KTX_error_code result =
+        ktxTexture2_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex);
 
     if (result != KTX_SUCCESS) {
       throw std::runtime_error("Could not load KTX2 file: " + filename);
@@ -264,7 +274,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     auto formatSupported = [&](VkFormat format) {
       VkFormatProperties formatProperties;
       vkGetPhysicalDeviceFormatProperties(context->physicalDevice, format, &formatProperties);
-      return ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) && (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
+      return ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) &&
+              (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT));
     };
 
     if (context->features.textureCompressionBC) {
@@ -307,7 +318,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
 
     // Create image
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    InitTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.mipLevels);
+    InitTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                texture.mipLevels);
 
     // Setup copy regions for each mip level
     std::vector<VkBufferImageCopy> copyRegions;
@@ -331,11 +343,14 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     // Copy to GPU
     VkCommandBuffer copyCmd = cmdUtils->beginSingleTimeCommands();
 
-    transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCmd, texture.mipLevels);
+    transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCmd,
+                          texture.mipLevels);
 
-    vkCmdCopyBufferToImage(copyCmd, stagingBuffer.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(copyRegions.size()), copyRegions.data());
+    vkCmdCopyBufferToImage(copyCmd, stagingBuffer.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           static_cast<uint32_t>(copyRegions.size()), copyRegions.data());
 
-    transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, copyCmd, texture.mipLevels);
+    transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, copyCmd,
+                          texture.mipLevels);
 
     texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     cmdUtils->endSingleTimeCommands(copyCmd);
@@ -385,12 +400,13 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     vkUnmapMemory(context->device, stagingBuffer.memory);
     // Create the texture image
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    InitTexture(texture, static_cast<uint32_t>(gltfImage.width), static_cast<uint32_t>(gltfImage.height), format, VK_IMAGE_TILING_OPTIMAL, usage,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.mipLevels);
+    InitTexture(texture, static_cast<uint32_t>(gltfImage.width), static_cast<uint32_t>(gltfImage.height), format,
+                VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.mipLevels);
 
     VkCommandBuffer copyCmd = cmdUtils->beginSingleTimeCommands();
     // undefined --> ready to recieve data
-    transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCmd, texture.mipLevels);
+    transitionImageLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copyCmd,
+                          texture.mipLevels);
     // Copy buffer to mip level = 0
     copyBufferToImage(texture, stagingBuffer.buffer, copyCmd, 0, 0, texture.extent);
 
@@ -416,7 +432,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
       barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-      vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+      vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                           nullptr, 1, &barrier);
 
       VkImageBlit blit{};
       blit.srcOffsets[0] = {0, 0, 0};
@@ -432,7 +449,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
       blit.dstSubresource.baseArrayLayer = 0;
       blit.dstSubresource.layerCount = 1;
 
-      vkCmdBlitImage(copyCmd, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+      vkCmdBlitImage(copyCmd, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture.image,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 
       // Transition previous mip level to shader read
       barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -440,7 +458,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
       barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-      vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+      vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                           nullptr, 1, &barrier);
 
       if (mipWidth > 1) mipWidth /= 2;
       if (mipHeight > 1) mipHeight /= 2;
@@ -453,7 +472,8 @@ TextureManager::Texture TextureManager::createTextureFromGLTFImage(const tinyglt
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
 
     texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     cmdUtils->endSingleTimeCommands(copyCmd);
@@ -517,7 +537,8 @@ std::vector<TextureManager::TextureSampler> TextureManager::loadTextureSamplers(
   }
   return samplers;
 }
-TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint32_t size, VkFormat format, uint32_t width, uint32_t height) {
+TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint32_t size, VkFormat format, uint32_t width,
+                                                                uint32_t height) {
   Texture texture;
   // Create staging buffer
   BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(size);
@@ -529,7 +550,8 @@ TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint
 
   // Initialize texture
   texture.device = context->device;
-  InitTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  InitTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL,
+              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
   // Transition image layout and copy buffer to image
   VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
@@ -539,7 +561,8 @@ TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint
   VkExtent3D copyExtent = {width, height, 1};
   copyBufferToImage(texture, stagingBuffer.buffer, commandBuffer, 0, 0, copyExtent);
   // Transition to shader read
-  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        commandBuffer);
   // Update current layout after transition
   texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   cmdUtils->endSingleTimeCommands(commandBuffer);
@@ -564,8 +587,9 @@ TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint
   return texture;
 }
 // cube map
-void TextureManager::InitCubemapTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-                                        VkMemoryPropertyFlags properties, uint32_t mipLevels) {
+void TextureManager::InitCubemapTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format,
+                                        VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+                                        uint32_t mipLevels) {
   // Initialize texture properties
   texture.device = context->device;
   texture.extent = {width, height, 1};
@@ -631,7 +655,8 @@ VkImageView TextureManager::createCubemapImageView(VkImage image, VkFormat forma
 
   return imageView;
 }
-void TextureManager::transitionCubemapLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer) {
+void TextureManager::transitionCubemapLayout(Texture& texture, VkImageLayout oldLayout, VkImageLayout newLayout,
+                                             VkCommandBuffer commandBuffer) {
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
   barrier.oldLayout = oldLayout;
@@ -666,8 +691,8 @@ void TextureManager::transitionCubemapLayout(Texture& texture, VkImageLayout old
 
   texture.currentLayout = newLayout;
 }
-void TextureManager::copyBufferToCubemapFace(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer, uint32_t faceIndex, VkDeviceSize bufferOffset,
-                                             uint32_t miplevel) {
+void TextureManager::copyBufferToCubemapFace(Texture& texture, VkBuffer buffer, VkCommandBuffer commandBuffer,
+                                             uint32_t faceIndex, VkDeviceSize bufferOffset, uint32_t miplevel) {
   VkBufferImageCopy region{};
   region.bufferOffset = bufferOffset;
   region.bufferRowLength = 0;
@@ -777,7 +802,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
   uint32_t mipLevels = static_cast<uint32_t>(floor(log2(faceSize)) + 1.0);
-  InitCubemapTexture(texture, faceSize, faceSize, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mipLevels);
+  InitCubemapTexture(texture, faceSize, faceSize, format, VK_IMAGE_TILING_OPTIMAL, usage,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mipLevels);
 
   // Transfer and generate mipmaps
   VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
@@ -810,7 +836,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
 
     // Blit for all 6 faces
     for (uint32_t face = 0; face < 6; ++face) {
@@ -828,7 +855,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
       blit.dstSubresource.baseArrayLayer = face;
       blit.dstSubresource.layerCount = 1;
 
-      vkCmdBlitImage(commandBuffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+      vkCmdBlitImage(commandBuffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture.image,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
     }
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -836,7 +864,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &barrier);
 
     if (mipWidth > 1) mipWidth /= 2;
     if (mipHeight > 1) mipHeight /= 2;
@@ -849,7 +878,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-  vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+  vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                       0, nullptr, 1, &barrier);
 
   texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   cmdUtils->endSingleTimeCommands(commandBuffer);
@@ -857,8 +887,8 @@ TextureManager::Texture TextureManager::createCubemapFromSingleFile(const std::s
   // Create image view and sampler
   texture.imageView = createCubemapImageView(texture.image, format, mipLevels);
 
-  TextureSampler cubemapSampler = {VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  TextureSampler cubemapSampler = {VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   texture.sampler = createTextureSampler(cubemapSampler, static_cast<float>(mipLevels));
 
   texture.descriptor.imageLayout = texture.currentLayout;
@@ -895,8 +925,8 @@ TextureManager::Texture TextureManager::createDefault() {
 
   // Initialize texture
   texture.device = context->device;
-  InitTexture(texture, width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  InitTexture(texture, width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
   // Transition image layout and copy buffer to image
   VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
@@ -909,7 +939,8 @@ TextureManager::Texture TextureManager::createDefault() {
   copyBufferToImage(texture, stagingBuffer.buffer, commandBuffer, 0, 0, copyExtent);
 
   // Transition to shader read
-  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandBuffer);
+  transitionImageLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        commandBuffer);
   // Update current layout after transition
   texture.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -936,7 +967,8 @@ TextureManager::Texture TextureManager::createDefault() {
 }
 void TextureManager::destroyTexture(Texture& texture) { texture = Texture(); }
 
-TextureManager::Texture TextureManager::loadHDRCubemapTexture(std::string& filename, VkFormat format, VkImageUsageFlags usage) {
+TextureManager::Texture TextureManager::loadHDRCubemapTexture(std::string& filename, VkFormat format,
+                                                              VkImageUsageFlags usage) {
   // Load KTX texture
   ktxTexture* ktxTex = nullptr;
   KTX_error_code result = ktxTexture_CreateFromNamedFile(filename.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex);
@@ -996,22 +1028,24 @@ TextureManager::Texture TextureManager::loadHDRCubemapTexture(std::string& filen
 
   // Create texture
   Texture texture;
-  InitCubemapTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mipLevels);
+  InitCubemapTexture(texture, width, height, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     mipLevels);
 
   // Change image transition
   auto cmdBuffer = cmdUtils->beginSingleTimeCommands();
   transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, cmdBuffer);
 
   // Copy the cube map faces from the staging buffer to the optimal tiled image
-  vkCmdCopyBufferToImage(cmdBuffer, stagingBuffer.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(bufferCopyRegions.size()),
-                         bufferCopyRegions.data());
+  vkCmdCopyBufferToImage(cmdBuffer, stagingBuffer.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         static_cast<uint32_t>(bufferCopyRegions.size()), bufferCopyRegions.data());
 
-  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, cmdBuffer);
+  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          cmdBuffer);
   cmdUtils->endSingleTimeCommands(cmdBuffer);
 
   // Create sampler
-  TextureSampler samplerSetting{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  TextureSampler samplerSetting{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   texture.sampler = createTextureSampler(samplerSetting, static_cast<float>(mipLevels));
 
   // Create view
@@ -1026,4 +1060,238 @@ TextureManager::Texture TextureManager::loadHDRCubemapTexture(std::string& filen
   // Clean up staging buffer (assuming your buffer manager handles this)
   bufferManager->destroyBuffer(stagingBuffer);
   return texture;
+}
+TextureManager::Texture TextureManager::createCubemapFromEquirectangular(const std::string& filepath) {
+  spdlog::info("Converting equirectangular HDR to cubemap: {}", filepath);
+
+  // Check file extension
+  bool isHDR = filepath.find(".hdr") != std::string::npos || filepath.find(".HDR") != std::string::npos;
+
+  int srcWidth, srcHeight, srcChannels;
+  void* srcPixels = nullptr;
+  VkFormat format;
+  size_t pixelSize;
+
+  if (isHDR) {
+    // Load HDR image
+    srcPixels = stbi_loadf(filepath.c_str(), &srcWidth, &srcHeight, &srcChannels, 4);
+    format = VK_FORMAT_R32G32B32A32_SFLOAT;  // Use 32-bit float for HDR
+    pixelSize = sizeof(float) * 4;
+  } else {
+    // Load regular image
+    srcPixels = stbi_load(filepath.c_str(), &srcWidth, &srcHeight, &srcChannels, STBI_rgb_alpha);
+    format = VK_FORMAT_R8G8B8A8_UNORM;
+    pixelSize = sizeof(uint8_t) * 4;
+  }
+
+  if (!srcPixels) {
+    throw std::runtime_error("Failed to load equirectangular image: " + filepath);
+  }
+
+  // Determine cubemap face size (typically 1/4 of equirect width for good quality)
+  const uint32_t faceSize = srcWidth / 4;
+  const uint32_t mipLevels = static_cast<uint32_t>(floor(log2(faceSize)) + 1.0);
+
+  spdlog::info("Creating cubemap: face size={}, mip levels={}", faceSize, mipLevels);
+
+  // Allocate memory for all 6 faces
+  VkDeviceSize faceDataSize = faceSize * faceSize * pixelSize;
+  VkDeviceSize totalSize = faceDataSize * 6;
+
+  // Convert equirectangular to cubemap faces on CPU
+  std::vector<uint8_t> cubemapData(totalSize);
+
+  // Face order: +X, -X, +Y, -Y, +Z, -Z
+  for (int face = 0; face < 6; ++face) {
+    convertEquirectFaceCPU(srcPixels, srcWidth, srcHeight, cubemapData.data() + face * faceDataSize, face, faceSize, isHDR);
+  }
+
+  // Free source image
+  if (isHDR) {
+    stbi_image_free(static_cast<float*>(srcPixels));
+  } else {
+    stbi_image_free(static_cast<uint8_t*>(srcPixels));
+  }
+
+  // Create staging buffer
+  BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(totalSize);
+  bufferManager->updateBuffer(stagingBuffer, cubemapData.data(), totalSize, 0);
+
+  // Create cubemap texture
+  Texture texture;
+  VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+  InitCubemapTexture(texture, faceSize, faceSize, format, VK_IMAGE_TILING_OPTIMAL, usage,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mipLevels);
+
+  // Transfer data to GPU and generate mipmaps
+  VkCommandBuffer commandBuffer = cmdUtils->beginSingleTimeCommands();
+
+  transitionCubemapLayout(texture, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, commandBuffer);
+
+  // Copy base mip level for all faces
+  for (uint32_t face = 0; face < 6; ++face) {
+    copyBufferToCubemapFace(texture, stagingBuffer.buffer, commandBuffer, face, face * faceDataSize, 0);
+  }
+
+  // Generate mipmaps
+  generateCubemapMipmaps(texture, commandBuffer);
+
+  cmdUtils->endSingleTimeCommands(commandBuffer);
+
+  // Create image view and sampler
+  texture.imageView = createCubemapImageView(texture.image, format, mipLevels);
+
+  TextureSampler cubemapSampler = {VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  texture.sampler = createTextureSampler(cubemapSampler, static_cast<float>(mipLevels));
+
+  texture.descriptor.imageLayout = texture.currentLayout;
+  texture.descriptor.imageView = texture.imageView;
+  texture.descriptor.sampler = texture.sampler;
+
+  bufferManager->destroyBuffer(stagingBuffer);
+
+  return texture;
+}
+
+void TextureManager::convertEquirectFaceCPU(void* srcPixels, int srcWidth, int srcHeight, void* dstFaceData, int faceIndex,
+                                            int faceSize, bool isHDR) {
+  // Face orientations for cubemap
+  struct FaceOrientation {
+    glm::vec3 forward;
+    glm::vec3 up;
+    glm::vec3 right;
+  };
+
+  // Define orientation for each face (+X, -X, +Y, -Y, +Z, -Z)
+  static const FaceOrientation faceOrientations[6] = {
+      {{1, 0, 0}, {0, 1, 0}, {0, 0, -1}},  // +X
+      {{-1, 0, 0}, {0, 1, 0}, {0, 0, 1}},  // -X
+      {{0, 1, 0}, {0, 0, -1}, {1, 0, 0}},  // +Y
+      {{0, -1, 0}, {0, 0, 1}, {1, 0, 0}},  // -Y
+      {{0, 0, 1}, {0, 1, 0}, {1, 0, 0}},   // +Z
+      {{0, 0, -1}, {0, 1, 0}, {-1, 0, 0}}  // -Z
+  };
+
+  const FaceOrientation& orient = faceOrientations[faceIndex];
+
+  float* srcHDR = static_cast<float*>(srcPixels);
+  float* dstHDR = static_cast<float*>(dstFaceData);
+
+  for (int y = 0; y < faceSize; ++y) {
+    for (int x = 0; x < faceSize; ++x) {
+      // Calculate normalized coordinates [-1, 1]
+      float u = (2.0f * x / (faceSize - 1)) - 1.0f;
+      float v = (2.0f * y / (faceSize - 1)) - 1.0f;
+
+      // Calculate direction vector for this pixel
+      glm::vec3 dir = glm::normalize(orient.forward + orient.right * u + orient.up * -v  // Flip Y
+      );
+
+      // Convert direction to spherical coordinates
+      float theta = atan2(dir.z, dir.x);  // Horizontal angle
+      float phi = asin(dir.y);            // Vertical angle
+
+      // Convert to equirectangular UV coordinates
+      float equirectU = (theta + M_PI) / (2.0f * M_PI);
+      float equirectV = (phi + M_PI * 0.5f) / M_PI;
+
+      // Sample equirectangular image (bilinear interpolation)
+      float srcX = equirectU * (srcWidth - 1);
+      float srcY = equirectV * (srcHeight - 1);
+
+      int x0 = static_cast<int>(srcX);
+      int y0 = static_cast<int>(srcY);
+      int x1 = std::min(x0 + 1, srcWidth - 1);
+      int y1 = std::min(y0 + 1, srcHeight - 1);
+
+      float fx = srcX - x0;
+      float fy = srcY - y0;
+
+      // Bilinear interpolation for each channel
+      int dstIdx = (y * faceSize + x) * 4;
+      for (int c = 0; c < 4; ++c) {
+        float p00 = srcHDR[(y0 * srcWidth + x0) * 4 + c];
+        float p10 = srcHDR[(y0 * srcWidth + x1) * 4 + c];
+        float p01 = srcHDR[(y1 * srcWidth + x0) * 4 + c];
+        float p11 = srcHDR[(y1 * srcWidth + x1) * 4 + c];
+
+        float value = p00 * (1 - fx) * (1 - fy) + p10 * fx * (1 - fy) + p01 * (1 - fx) * fy + p11 * fx * fy;
+
+        dstHDR[dstIdx + c] = value;
+      }
+    }
+  }
+}
+
+void TextureManager::generateCubemapMipmaps(Texture& cubemap, VkCommandBuffer cmd) {
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.image = cubemap.image;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 6;  // All cubemap faces
+  barrier.subresourceRange.levelCount = 1;
+
+  int32_t mipWidth = cubemap.extent.width;
+  int32_t mipHeight = cubemap.extent.height;
+
+  for (uint32_t i = 1; i < cubemap.mipLevels; i++) {
+    barrier.subresourceRange.baseMipLevel = i - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &barrier);
+
+    // Blit all 6 faces
+    for (uint32_t face = 0; face < 6; ++face) {
+      VkImageBlit blit{};
+      blit.srcOffsets[0] = {0, 0, 0};
+      blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+      blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      blit.srcSubresource.mipLevel = i - 1;
+      blit.srcSubresource.baseArrayLayer = face;
+      blit.srcSubresource.layerCount = 1;
+
+      blit.dstOffsets[0] = {0, 0, 0};
+      blit.dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1};
+      blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      blit.dstSubresource.mipLevel = i;
+      blit.dstSubresource.baseArrayLayer = face;
+      blit.dstSubresource.layerCount = 1;
+
+      vkCmdBlitImage(cmd, cubemap.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap.image,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+    }
+
+    // Transition mip level to shader read
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
+
+    if (mipWidth > 1) mipWidth /= 2;
+    if (mipHeight > 1) mipHeight /= 2;
+  }
+
+  // Transition last mip level
+  barrier.subresourceRange.baseMipLevel = cubemap.mipLevels - 1;
+  barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                       1, &barrier);
+
+  cubemap.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }

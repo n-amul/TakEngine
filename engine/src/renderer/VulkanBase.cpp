@@ -52,7 +52,8 @@ void VulkanBase::drawFrame() {
 
   // Acquire image from swap chain
   uint32_t imageIndex;
-  VkResult res = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+  VkResult res = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE,
+                                       &imageIndex);
 
   if (res == VK_ERROR_OUT_OF_DATE_KHR) {
     recreateSwapChain();
@@ -145,7 +146,8 @@ void VulkanBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageInd
 
 void VulkanBase::createDepthResources() {
   auto findDepthFormat = [this]() -> VkFormat {
-    auto findSupportedFormat = [this](const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) -> VkFormat {
+    auto findSupportedFormat = [this](const std::vector<VkFormat>& candidates, VkImageTiling tiling,
+                                      VkFormatFeatureFlags features) -> VkFormat {
       for (VkFormat format : candidates) {
         VkFormatProperties props;
         vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
@@ -159,14 +161,15 @@ void VulkanBase::createDepthResources() {
       throw std::runtime_error("Failed to find supported format");
     };
     // most desired to less desired format
-    return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}, VK_IMAGE_TILING_OPTIMAL,
-                               VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+                               VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
   };
   if (depthBuffer.format == VK_FORMAT_UNDEFINED) {
     depthBuffer.format = findDepthFormat();
   }
-  textureManager->InitTexture(depthBuffer, swapChainExtent.width, swapChainExtent.height, depthBuffer.format, VK_IMAGE_TILING_OPTIMAL,
-                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, msaaSamples);
+  textureManager->InitTexture(depthBuffer, swapChainExtent.width, swapChainExtent.height, depthBuffer.format,
+                              VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, msaaSamples);
   depthBuffer.imageView = textureManager->createImageView(depthBuffer.image, depthBuffer.format, VK_IMAGE_ASPECT_DEPTH_BIT);
   // image tranition take place in renderpass
 }
@@ -471,7 +474,8 @@ void VulkanBase::createImageViews() {
   swapChainImageViews.resize(swapChainImages.size());
 
   for (size_t i = 0; i < swapChainImages.size(); i++) {
-    swapChainImageViews[i] = textureManager->createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+    swapChainImageViews[i] =
+        textureManager->createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
   }
 }
 
@@ -538,7 +542,8 @@ SwapChainSupportDetails VulkanBase::querySwapChainSupport(VkPhysicalDevice devic
 
 VkSurfaceFormatKHR VulkanBase::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
   for (const auto& availableFormat : availableFormats) {
-    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+        availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
       return availableFormat;
     }
   }
@@ -875,8 +880,10 @@ std::vector<const char*> VulkanBase::getRequiredExtensions() {
 //-----------------------------------------------------------
 // Static Callbacks
 //-----------------------------------------------------------
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanBase::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanBase::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                         VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                                         void* pUserData) {
   switch (messageSeverity) {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
       spdlog::error("validation layer: {}", pCallbackData->pMessage);
@@ -894,9 +901,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanBase::debugCallback(VkDebugUtilsMessageSeve
 void VulkanBase::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
   createInfo = {};
   createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  createInfo.messageSeverity =
-      VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
   createInfo.pfnUserCallback = debugCallback;
 }
 
@@ -931,7 +940,8 @@ void VulkanBase::createColorResources() {
   auto getMaxUsableSampleCount = [this]() -> VkSampleCountFlagBits {
     VkPhysicalDeviceProperties physicalDeviceProperties;
     vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
-    VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+    VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts &
+                                physicalDeviceProperties.limits.framebufferDepthSampleCounts;
     // prefer 4x
     if (counts & VK_SAMPLE_COUNT_4_BIT) {
       return VK_SAMPLE_COUNT_4_BIT;
@@ -940,8 +950,10 @@ void VulkanBase::createColorResources() {
   };
   msaaSamples = getMaxUsableSampleCount();
   msaaColor.format = swapChainImageFormat;
-  textureManager->InitTexture(msaaColor, swapChainExtent.width, swapChainExtent.height, msaaColor.format, VK_IMAGE_TILING_OPTIMAL,
-                              VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, msaaSamples);
+  textureManager->InitTexture(msaaColor, swapChainExtent.width, swapChainExtent.height, msaaColor.format,
+                              VK_IMAGE_TILING_OPTIMAL,
+                              VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, msaaSamples);
   msaaColor.imageView = textureManager->createImageView(msaaColor.image, msaaColor.format, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 // Static callback implementations
@@ -1045,8 +1057,7 @@ void VulkanBase::loadEnvironment(std::string& filename) {
   }
 
   // Load HDR cubemap texture
-  pbrEnvironment.environmentCube =
-      textureManager->loadHDRCubemapTexture(filename, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+  pbrEnvironment.environmentCube = textureManager->createCubemapFromEquirectangular(filename);
 
   spdlog::info("Environment loaded: {}", pbrEnvironment.environmentCube.image != VK_NULL_HANDLE);
   spdlog::info("Environment is cubemap: {}", pbrEnvironment.environmentCube.isCubemap());
@@ -1061,13 +1072,15 @@ void VulkanBase::generateBRDFLUT() {
   const int32_t dim = 512;
 
   // Initialize texture
-  textureManager->InitTexture(pbrEnvironment.lutBrdf, dim, dim, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+  textureManager->InitTexture(pbrEnvironment.lutBrdf, dim, dim, format, VK_IMAGE_TILING_OPTIMAL,
+                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
 
-  pbrEnvironment.lutBrdf.imageView = textureManager->createImageView(pbrEnvironment.lutBrdf.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
+  pbrEnvironment.lutBrdf.imageView =
+      textureManager->createImageView(pbrEnvironment.lutBrdf.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
 
-  TextureManager::TextureSampler sampler{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  TextureManager::TextureSampler sampler{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   pbrEnvironment.lutBrdf.sampler = textureManager->createTextureSampler(sampler, 1.0f, 1.0f);
 
   // Create render pass for BRDF LUT generation
@@ -1156,7 +1169,8 @@ void VulkanBase::generateBRDFLUT() {
   rasterizationStateCI.lineWidth = 1.0f;
 
   VkPipelineColorBlendAttachmentState blendAttachmentState{};
-  blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachmentState.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
   blendAttachmentState.blendEnable = VK_FALSE;
 
   VkPipelineColorBlendStateCreateInfo colorBlendStateCI{};
@@ -1317,11 +1331,13 @@ void VulkanBase::generateCubemaps() {
 
     // Create target cubemap
     const uint32_t numMips = static_cast<uint32_t>(floor(log2(dim))) + 1;
-    textureManager->InitCubemapTexture(cubemap, dim, dim, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+    textureManager->InitCubemapTexture(cubemap, dim, dim, format, VK_IMAGE_TILING_OPTIMAL,
+                                       VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, numMips);
 
     cubemap.imageView = textureManager->createCubemapImageView(cubemap.image, format, numMips);
-    TextureManager::TextureSampler samplerSetting{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    TextureManager::TextureSampler samplerSetting{VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                                  VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
     cubemap.sampler = textureManager->createTextureSampler(samplerSetting, numMips, 1.0f);
 
@@ -1374,7 +1390,8 @@ void VulkanBase::generateCubemaps() {
     // Create offscreen framebuffer
     TextureManager::Texture offscreen;
     VkFramebuffer offscreenFramebuffer;
-    textureManager->InitTexture(offscreen, dim, dim, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+    textureManager->InitTexture(offscreen, dim, dim, format, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     offscreen.imageView = textureManager->createImageView(offscreen.image, format);
 
@@ -1398,12 +1415,14 @@ void VulkanBase::generateCubemaps() {
     imageMemoryBarrier.srcAccessMask = 0;
     imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     imageMemoryBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCmdPipelineBarrier(layoutCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+    vkCmdPipelineBarrier(layoutCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &imageMemoryBarrier);
     cmdUtils->endSingleTimeCommands(layoutCmd);
 
     // Create descriptors
     VkDescriptorSetLayout descriptorsetlayout;
-    VkDescriptorSetLayoutBinding setLayoutBinding = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutBinding setLayoutBinding = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                                                     VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
     descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     descriptorSetLayoutCI.pBindings = &setLayoutBinding;
@@ -1486,7 +1505,8 @@ void VulkanBase::generateCubemaps() {
     rasterizationStateCI.lineWidth = 1.0f;
 
     VkPipelineColorBlendAttachmentState blendAttachmentState{};
-    blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachmentState.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     blendAttachmentState.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlendStateCI{};
@@ -1580,8 +1600,10 @@ void VulkanBase::generateCubemaps() {
 
     // Matrices for each cube face
     std::vector<glm::mat4> matrices = {
-        glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-        glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+        glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f),
+                    glm::vec3(1.0f, 0.0f, 0.0f)),
+        glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f),
+                    glm::vec3(1.0f, 0.0f, 0.0f)),
         glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
         glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
         glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
@@ -1601,7 +1623,8 @@ void VulkanBase::generateCubemaps() {
     // Change cubemap image layout to transfer destination
     {
       VkCommandBuffer cmdBuf = cmdUtils->beginSingleTimeCommands();
-      textureManager->transitionCubemapLayout(cubemap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, cmdBuf);
+      textureManager->transitionCubemapLayout(cubemap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                              cmdBuf);
       cmdUtils->endSingleTimeCommands(cmdBuf);
     }
 
@@ -1619,12 +1642,14 @@ void VulkanBase::generateCubemaps() {
         switch (target) {
           case IRRADIANCE:
             pushBlockIrradiance.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
-            vkCmdPushConstants(cmdBuf, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockIrradiance), &pushBlockIrradiance);
+            vkCmdPushConstants(cmdBuf, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(PushBlockIrradiance), &pushBlockIrradiance);
             break;
           case PREFILTEREDENV:
             pushBlockPrefilterEnv.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
             pushBlockPrefilterEnv.roughness = (float)m / (float)(numMips - 1);
-            vkCmdPushConstants(cmdBuf, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockPrefilterEnv), &pushBlockPrefilterEnv);
+            vkCmdPushConstants(cmdBuf, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(PushBlockPrefilterEnv), &pushBlockPrefilterEnv);
             break;
         }
 
@@ -1649,7 +1674,8 @@ void VulkanBase::generateCubemaps() {
         imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         imageMemoryBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+        vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 1, &imageMemoryBarrier);
 
         // Copy from framebuffer to cube face
         VkImageCopy copyRegion{};
@@ -1669,14 +1695,16 @@ void VulkanBase::generateCubemaps() {
         copyRegion.extent.height = static_cast<uint32_t>(viewport.height);
         copyRegion.extent.depth = 1;
 
-        vkCmdCopyImage(cmdBuf, offscreen.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        vkCmdCopyImage(cmdBuf, offscreen.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
         // Transition offscreen back to color attachment
         imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+        vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 1, &imageMemoryBarrier);
 
         cmdUtils->endSingleTimeCommands(cmdBuf);
       }
@@ -1685,7 +1713,8 @@ void VulkanBase::generateCubemaps() {
     // Transition cubemap to shader read
     {
       auto cmdBuf = cmdUtils->beginSingleTimeCommands();
-      textureManager->transitionCubemapLayout(cubemap, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, cmdBuf);
+      textureManager->transitionCubemapLayout(cubemap, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, cmdBuf);
       cmdUtils->endSingleTimeCommands(cmdBuf);
     }
 
@@ -1717,6 +1746,7 @@ void VulkanBase::generateCubemaps() {
 
     auto tEnd = std::chrono::high_resolution_clock::now();
     auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
-    spdlog::info("Generated {} cubemap with {} mip levels in {} ms", target == IRRADIANCE ? "irradiance" : "prefiltered environment", numMips, tDiff);
+    spdlog::info("Generated {} cubemap with {} mip levels in {} ms",
+                 target == IRRADIANCE ? "irradiance" : "prefiltered environment", numMips, tDiff);
   }
 }

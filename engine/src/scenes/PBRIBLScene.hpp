@@ -21,14 +21,17 @@ class TAK_API PBRIBLScene : public VulkanBase {
 
  private:
   // ============= Scene Data =============
-  struct Textures {
-    TextureManager::Texture empty;
-  } textures;
-
   struct Models {
     ModelManager::Model scene;
     ModelManager::Model skybox;
   } models;
+  struct Textures {
+    TextureManager::Texture environmentCube;
+    TextureManager::Texture prefilteredCube;
+    TextureManager::Texture irradianceCube;
+    TextureManager::Texture lutBrdf;
+    float prefilteredCubeMipLevels = 0.0f;
+  } textures;
 
   // ============= Lighting =============
   struct LightSource {
@@ -148,4 +151,5 @@ class TAK_API PBRIBLScene : public VulkanBase {
   void setupDescriptors();
   void addPipelineSet(const std::string prefix, const std::string vertexShader, const std::string fragmentShader);
   void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode);
+  void envMapLoadTest();
 };
