@@ -5,7 +5,8 @@
 
 #include "BufferManager.hpp"
 
-BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, bool keepMapped) {
+BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                                                  VkMemoryPropertyFlags properties, bool keepMapped) {
   Buffer buffer(context->device);  // Initialize with device handle
   buffer.size = size;
 
@@ -33,7 +34,6 @@ BufferManager::Buffer BufferManager::createBuffer(VkDeviceSize size, VkBufferUsa
   }
   // link buffer to memory somewhere in gpu
   vkBindBufferMemory(context->device, buffer.buffer, buffer.memory, 0);
-  // set up descriptor here?
   // Map the buffer if requested and if it's host-visible
   if (keepMapped && (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
     if (vkMapMemory(context->device, buffer.memory, 0, size, 0, &buffer.mapped) != VK_SUCCESS) {
@@ -55,7 +55,8 @@ BufferManager::Buffer BufferManager::createGPULocalBuffer(const void* data, VkDe
     throw std::runtime_error("Invalid data or size for GPU buffer creation");
   }
   // Create staging buffer
-  Buffer stagingBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  Buffer stagingBuffer = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   // Copy data to staging buffer
   updateBuffer(stagingBuffer, data, size, 0);
   // Create device local buffer with the specified usage
@@ -117,5 +118,6 @@ void BufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
 }
 
 BufferManager::Buffer BufferManager::createStagingBuffer(VkDeviceSize size) {
-  return createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, false);
+  return createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, false);
 }

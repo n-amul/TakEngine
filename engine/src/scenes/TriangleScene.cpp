@@ -17,6 +17,7 @@ TriangleScene::TriangleScene() {
 void TriangleScene::loadResources() {
   initializePBREnvironment();
   loadEnvironment(std::string(TEXTURE_DIR) + "/skybox/workshop.hdr");
+  skybox = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/box/box.gltf");
   spdlog::info("Loading triangle resources");
   // scene objs
   createDescriptorSetLayout();
@@ -24,7 +25,6 @@ void TriangleScene::loadResources() {
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
-
   createDescriptorPool();
   createDescriptorSets();
 }
@@ -159,6 +159,109 @@ void TriangleScene::createPipeline() {
   vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
 
   spdlog::info("Triangle pipeline created successfully");
+  createSkyboxPipeline();
+}
+
+void TriangleScene::createSkyboxPipeline() {
+  spdlog::info("Creating skybox pipeline");
+  VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI{};
+  inputAssemblyStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  inputAssemblyStateCI.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+  VkPipelineRasterizationStateCreateInfo rasterizationStateCI{};
+  rasterizationStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  rasterizationStateCI.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterizationStateCI.cullMode = VK_CULL_MODE_NONE;
+  rasterizationStateCI.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizationStateCI.lineWidth = 1.0f;
+
+  VkPipelineColorBlendAttachmentState blendAttachmentState{};
+  blendAttachmentState.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachmentState.blendEnable = VK_FALSE;
+
+  VkPipelineColorBlendStateCreateInfo colorBlendStateCI{};
+  colorBlendStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  colorBlendStateCI.attachmentCount = 1;
+  colorBlendStateCI.pAttachments = &blendAttachmentState;
+
+  VkPipelineDepthStencilStateCreateInfo depthStencilStateCI{};
+  depthStencilStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depthStencilStateCI.depthTestEnable = VK_FALSE;
+  depthStencilStateCI.depthWriteEnable = VK_FALSE;
+  depthStencilStateCI.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+  depthStencilStateCI.depthBoundsTestEnable = VK_FALSE;
+  depthStencilStateCI.stencilTestEnable = VK_FALSE;
+
+  VkPipelineViewportStateCreateInfo viewportStateCI{};
+  viewportStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewportStateCI.viewportCount = 1;
+  viewportStateCI.scissorCount = 1;
+
+  VkPipelineMultisampleStateCreateInfo multisampleStateCI{};
+  multisampleStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  if (multisampling) {
+    multisampleStateCI.rasterizationSamples = msaaSamples;
+  }
+
+  std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+  VkPipelineDynamicStateCreateInfo dynamicStateCI{};
+  dynamicStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dynamicStateCI.pDynamicStates = dynamicStateEnables.data();
+  dynamicStateCI.dynamicStateCount = static_cast<uint32_t>(dynamicStateEnables.size());
+
+  VkPipelineLayoutCreateInfo pipelineLayoutCI{};
+  pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipelineLayoutCI.setLayoutCount = 1;
+  pipelineLayoutCI.pSetLayouts = &skyboxDescriptorSetLayout;
+  pipelineLayoutCI.pushConstantRangeCount = 0;
+  pipelineLayoutCI.pPushConstantRanges = nullptr;
+  VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &skyboxPipelineLayout));
+
+  // Vertex bindings and attributes
+  VkVertexInputBindingDescription vertexInputBinding = tak::Vertex::getBindingDescription();
+  std::array<VkVertexInputAttributeDescription, 8> vertexInputAttributes = tak::Vertex::getAttributeDescriptions();
+
+  VkPipelineVertexInputStateCreateInfo vertexInputStateCI{};
+  vertexInputStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  vertexInputStateCI.vertexBindingDescriptionCount = 1;
+  vertexInputStateCI.pVertexBindingDescriptions = &vertexInputBinding;
+  vertexInputStateCI.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
+  vertexInputStateCI.pVertexAttributeDescriptions = vertexInputAttributes.data();
+
+  // Pipelines
+  std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+  shaderStages[0] = loadShader(std::string(SHADER_DIR) + "/skybox.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+  shaderStages[1] = loadShader(std::string(SHADER_DIR) + "/skybox.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
+  VkGraphicsPipelineCreateInfo pipelineCI{};
+  pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  pipelineCI.layout = skyboxPipelineLayout;
+  pipelineCI.renderPass = renderPass;
+  pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
+  pipelineCI.pVertexInputState = &vertexInputStateCI;
+  pipelineCI.pRasterizationState = &rasterizationStateCI;
+  pipelineCI.pColorBlendState = &colorBlendStateCI;
+  pipelineCI.pMultisampleState = &multisampleStateCI;
+  pipelineCI.pViewportState = &viewportStateCI;
+  pipelineCI.pDepthStencilState = &depthStencilStateCI;
+  pipelineCI.pDynamicState = &dynamicStateCI;
+  pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+  pipelineCI.pStages = shaderStages.data();
+  pipelineCI.subpass = 0;
+  pipelineCI.basePipelineHandle = VK_NULL_HANDLE;
+  pipelineCI.basePipelineIndex = -1;
+
+  // Fixed: Use pipelineCI instead of pipelineInfo
+  if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &skyboxPipeline) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create skybox graphics pipeline!");
+  }
+
+  // Cleanup shader modules
+  vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+  vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
+  spdlog::info("Skybox pipeline created successfully");
 }
 
 void TriangleScene::createVertexBuffer() {
@@ -172,15 +275,15 @@ void TriangleScene::createIndexBuffer() {
 }
 void TriangleScene::createDescriptorPool() {
   std::array<VkDescriptorPoolSize, 2> poolSizes = {
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2)},
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2)}};
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 4)},
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 4)}};
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
   poolInfo.pPoolSizes = poolSizes.data();
   // set will contain ubo and sampler we need for each frame
-  poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2);
+  poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 4);
 
   if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
     throw std::runtime_error("failed to create descriptor pool!");
@@ -211,53 +314,128 @@ void TriangleScene::createDescriptorSetLayout() {
   if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
     throw std::runtime_error("failed to create descriptor set layout!");
   }
+  // skybox
+  std::array<VkDescriptorSetLayoutBinding, 3> bindingsSkybox = {
+      VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+      VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+      VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+
+  VkDescriptorSetLayoutCreateInfo layoutInfoSkybox{};
+  layoutInfoSkybox.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfoSkybox.bindingCount = static_cast<uint32_t>(bindingsSkybox.size());
+  layoutInfoSkybox.pBindings = bindingsSkybox.data();
+
+  if (vkCreateDescriptorSetLayout(device, &layoutInfoSkybox, nullptr, &skyboxDescriptorSetLayout) != VK_SUCCESS) {
+    throw std::runtime_error("failed to create descriptor set layout!");
+  }
 }
 
 void TriangleScene::createDescriptorSets() {
-  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
-  VkDescriptorSetAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = descriptorPool;
-  allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-  allocInfo.pSetLayouts = layouts.data();
+  // scene obj
+  {
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
 
-  descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-  if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-    throw std::runtime_error("failed to allocate descriptor sets!");
+    descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+      throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      VkDescriptorBufferInfo bufferInfo{};
+      bufferInfo.buffer = uniformBuffers[i].buffer;
+      bufferInfo.offset = 0;
+      bufferInfo.range = sizeof(UniformBufferObject);
+
+      VkDescriptorImageInfo imageInfo{};
+      imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      // texture passing
+      imageInfo.imageView = rectTexture.imageView;
+      imageInfo.sampler = rectTexture.sampler;
+
+      std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+      descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[0].dstSet = descriptorSets[i];
+      descriptorWrites[0].dstBinding = 0;
+      descriptorWrites[0].dstArrayElement = 0;
+      descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[0].descriptorCount = 1;
+      descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+      descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[1].dstSet = descriptorSets[i];
+      descriptorWrites[1].dstBinding = 1;
+      descriptorWrites[1].dstArrayElement = 0;
+      descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptorWrites[1].descriptorCount = 1;
+      descriptorWrites[1].pImageInfo = &imageInfo;
+
+      vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
   }
+  // skybox
+  {
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, skyboxDescriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
 
-  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = uniformBuffers[i].buffer;
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(UniformBufferObject);
+    skyboxDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(device, &allocInfo, skyboxDescriptorSets.data()) != VK_SUCCESS) {
+      throw std::runtime_error("failed to allocate descriptor sets!");
+    }
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    // texture passin
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      VkDescriptorBufferInfo skyboxUBOBufferInfo{};
+      skyboxUBOBufferInfo.buffer = skyboxUniformBuffers[i].buffer;  // per-frame skybox UBO
+      skyboxUBOBufferInfo.offset = 0;
+      skyboxUBOBufferInfo.range = sizeof(UniformBufferSkybox);
+      VkDescriptorBufferInfo skyboxParamBufferInfo{};
+      skyboxParamBufferInfo.buffer = skyBoxParamBuffer.buffer;
+      skyboxParamBufferInfo.offset = 0;
+      skyboxParamBufferInfo.range = sizeof(uboParamsSkybox);
 
-    imageInfo.imageView = rectTexture.imageView;
-    imageInfo.sampler = rectTexture.sampler;
+      VkDescriptorImageInfo skyboxImageInfo{};
+      skyboxImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      skyboxImageInfo.imageView = pbrEnvironment.environmentCube.imageView;
+      skyboxImageInfo.sampler = pbrEnvironment.environmentCube.sampler;
 
-    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+      // --- Write descriptors (binding 0 = UBO, 1 = params UBO, 2 = combined image sampler) ---
+      std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+      // binding 0 : per-frame skybox UBO (vertex)
+      descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[0].dstSet = skyboxDescriptorSets[i];
+      descriptorWrites[0].dstBinding = 0;
+      descriptorWrites[0].dstArrayElement = 0;
+      descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[0].descriptorCount = 1;
+      descriptorWrites[0].pBufferInfo = &skyboxUBOBufferInfo;
+      // binding 1 : params UBO (fragment)
+      descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[1].dstSet = skyboxDescriptorSets[i];
+      descriptorWrites[1].dstBinding = 1;
+      descriptorWrites[1].dstArrayElement = 0;
+      descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[1].descriptorCount = 1;
+      descriptorWrites[1].pBufferInfo = &skyboxParamBufferInfo;
+      // binding 2 : cubemap sampler (fragment)
+      descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[2].dstSet = skyboxDescriptorSets[i];
+      descriptorWrites[2].dstBinding = 2;
+      descriptorWrites[2].dstArrayElement = 0;
+      descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptorWrites[2].descriptorCount = 1;
+      descriptorWrites[2].pImageInfo = &skyboxImageInfo;
 
-    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = descriptorSets[i];
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = descriptorSets[i];
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &imageInfo;
-
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+      vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
   }
 }
 
@@ -272,6 +450,19 @@ void TriangleScene::createUniformBuffers() {
                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     vkMapMemory(device, uniformBuffers[i].memory, 0, bufferSize, 0, &uniformBuffersMapped[i]);
   }
+  // skybox
+  VkDeviceSize skyBoxBufferSize = sizeof(UniformBufferSkybox);
+  skyboxUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+  skyboxUniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    skyboxUniformBuffers[i] =
+        bufferManager->createBuffer(skyBoxBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+  }
+  VkDeviceSize skyBoxParamSize = sizeof(uboParamsSkybox);
+  skyBoxParamBuffer = bufferManager->createGPULocalBuffer(
+      &skyBoxParamSize, skyBoxParamSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 }
 // +Z = up, +X = right, +Y = forward
 void TriangleScene::updateUniformBuffer(f32 deltatime) {
@@ -285,6 +476,16 @@ void TriangleScene::updateUniformBuffer(f32 deltatime) {
   ubo.proj = camera.getProjectionMatrix(aspectRatio);
 
   memcpy(uniformBuffersMapped[currentFrame], &ubo, sizeof(ubo));
+
+  UniformBufferSkybox skyboxUBO{};
+  skyboxUBO.proj = ubo.proj;  // Same projection as main scene
+  // For skybox, we want the view matrix without translation
+  // This keeps the skybox centered around the camera
+  glm::mat4 viewWithoutTranslation = glm::mat4(glm::mat3(camera.getViewMatrix()));
+  skyboxUBO.model = viewWithoutTranslation;
+
+  // Write to skybox uniform buffer using staged update
+  bufferManager->updateBuffer(skyboxUniformBuffers[currentFrame], &skyboxUBO, sizeof(skyboxUBO));
 }
 
 void TriangleScene::createTextures() {
@@ -309,9 +510,18 @@ void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
   VkDeviceSize offsets[] = {0};
 
+  // draw skybox:
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 1,
+                          &skyboxDescriptorSets[currentFrame], 0, nullptr);
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
+  const VkDeviceSize offsetSkybox[1] = {0};
+  for (tak::Node* node : skybox.nodes) {
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &skybox.vertices.buffer, offsetSkybox);
+    vkCmdBindIndexBuffer(commandBuffer, skybox.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+    modelManager->drawNode(node, commandBuffer);
+  }
+  // scene obj
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
   VkBuffer vertexBuffers[] = {vertexBuffer.buffer};
   vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -332,9 +542,11 @@ void TriangleScene::cleanupResources() {
   spdlog::info("Cleaning up triangle resources");
   // clean up texture resources
   textureManager->destroyTexture(rectTexture);
+  modelManager->destroyModel(skybox);
 
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+  vkDestroyDescriptorSetLayout(device, skyboxDescriptorSetLayout, nullptr);
 
   // unmap the uniformbuffer pointers
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -343,16 +555,22 @@ void TriangleScene::cleanupResources() {
       uniformBuffersMapped[i] = nullptr;
     }
     bufferManager->destroyBuffer(uniformBuffers[i]);
+    bufferManager->destroyBuffer(skyboxUniformBuffers[i]);
   }
   // Clean up buffers
   bufferManager->destroyBuffer(vertexBuffer);
   bufferManager->destroyBuffer(indexBuffer);
+  bufferManager->destroyBuffer(skyBoxParamBuffer);
 
   // Clean up pipeline
   vkDestroyPipeline(device, graphicsPipeline, nullptr);
   graphicsPipeline = VK_NULL_HANDLE;
   vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
   pipelineLayout = VK_NULL_HANDLE;
+  vkDestroyPipeline(device, skyboxPipeline, nullptr);
+  skyboxPipeline = VK_NULL_HANDLE;
+  vkDestroyPipelineLayout(device, skyboxPipelineLayout, nullptr);
+  skyboxPipelineLayout = VK_NULL_HANDLE;
 
   spdlog::info("Triangle resources cleaned up");
   cleanupPBREnvironment();

@@ -30,6 +30,15 @@ class TAK_API TriangleScene : public VulkanBase {
     glm::mat4 view;
     glm::mat4 proj;
   };
+  struct UniformBufferSkybox {
+    glm::mat4 proj;
+    glm::mat4 model;
+  };
+  struct UBOParamsSkybox {
+    glm::vec4 _pad0;
+    float exposure = 4.5f;
+    float gamma = 2.2f;
+  } uboParamsSkybox;
   // Scene-specific vertex structure
   struct Vertex {
     glm::vec3 pos;
@@ -86,6 +95,7 @@ class TAK_API TriangleScene : public VulkanBase {
   VkDescriptorSetLayout skyboxDescriptorSetLayout = VK_NULL_HANDLE;
   std::vector<VkDescriptorSet> skyboxDescriptorSets;
   std::vector<BufferManager::Buffer> skyboxUniformBuffers;
+  BufferManager::Buffer skyBoxParamBuffer;
   std::vector<void*> skyboxUniformBuffersMapped;
   void createSkyboxPipeline();
 
