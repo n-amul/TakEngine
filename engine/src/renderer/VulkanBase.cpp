@@ -1048,14 +1048,6 @@ void VulkanBase::initializePBREnvironment() {
 
 void VulkanBase::loadEnvironment(std::string& filename) {
   spdlog::info("Loading environment from {}", filename);
-
-  // Clean up existing environment if loaded
-  if (pbrEnvironment.environmentCube.image) {
-    textureManager->destroyTexture(pbrEnvironment.environmentCube);
-    textureManager->destroyTexture(pbrEnvironment.irradianceCube);
-    textureManager->destroyTexture(pbrEnvironment.prefilteredCube);
-  }
-
   // Load HDR cubemap texture
   pbrEnvironment.environmentCube = textureManager->createCubemapFromEquirectangular(filename);
   // pbrEnvironment.environmentCube =
@@ -1307,10 +1299,7 @@ void VulkanBase::generateCubemaps() {
   enum Target { IRRADIANCE = 0, PREFILTEREDENV = 1 };
 
   // We need a simple box model for skybox generation
-  // Load it once if not already loaded
-  if (tempSkyboxModel.vertices.buffer == VK_NULL_HANDLE) {
-    tempSkyboxModel = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/box/box.gltf");
-  }
+  tempSkyboxModel = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/box/box.gltf");
 
   for (uint32_t target = 0; target < PREFILTEREDENV + 1; target++) {
     TextureManager::Texture cubemap;

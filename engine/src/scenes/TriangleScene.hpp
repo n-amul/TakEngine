@@ -96,7 +96,6 @@ class TAK_API TriangleScene : public VulkanBase {
   std::vector<VkDescriptorSet> skyboxDescriptorSets;
   std::vector<BufferManager::Buffer> skyboxUniformBuffers;
   BufferManager::Buffer skyBoxParamBuffer;
-  std::vector<void*> skyboxUniformBuffersMapped;
   void createSkyboxPipeline();
 
   //+Z = up, +X = right, +Y = forward

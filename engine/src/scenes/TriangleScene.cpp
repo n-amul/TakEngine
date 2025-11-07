@@ -404,6 +404,7 @@ void TriangleScene::createDescriptorSets() {
 
       VkDescriptorImageInfo skyboxImageInfo{};
       skyboxImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      //
       skyboxImageInfo.imageView = pbrEnvironment.environmentCube.imageView;
       skyboxImageInfo.sampler = pbrEnvironment.environmentCube.sampler;
 
@@ -453,16 +454,14 @@ void TriangleScene::createUniformBuffers() {
   // skybox
   VkDeviceSize skyBoxBufferSize = sizeof(UniformBufferSkybox);
   skyboxUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-  skyboxUniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     skyboxUniformBuffers[i] =
         bufferManager->createBuffer(skyBoxBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
-  VkDeviceSize skyBoxParamSize = sizeof(uboParamsSkybox);
   skyBoxParamBuffer = bufferManager->createGPULocalBuffer(
-      &skyBoxParamSize, skyBoxParamSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+      &uboParamsSkybox, sizeof(uboParamsSkybox), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 }
 // +Z = up, +X = right, +Y = forward
 void TriangleScene::updateUniformBuffer(f32 deltatime) {
@@ -483,6 +482,7 @@ void TriangleScene::updateUniformBuffer(f32 deltatime) {
   // This keeps the skybox centered around the camera
   glm::mat4 viewWithoutTranslation = glm::mat4(glm::mat3(camera.getViewMatrix()));
   skyboxUBO.model = viewWithoutTranslation;
+  skyboxUBO.model = glm::rotate(skyboxUBO.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
   // Write to skybox uniform buffer using staged update
   bufferManager->updateBuffer(skyboxUniformBuffers[currentFrame], &skyboxUBO, sizeof(skyboxUBO));

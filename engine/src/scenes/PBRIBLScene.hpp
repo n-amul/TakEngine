@@ -25,13 +25,6 @@ class TAK_API PBRIBLScene : public VulkanBase {
     ModelManager::Model scene;
     ModelManager::Model skybox;
   } models;
-  struct Textures {
-    TextureManager::Texture environmentCube;
-    TextureManager::Texture prefilteredCube;
-    TextureManager::Texture irradianceCube;
-    TextureManager::Texture lutBrdf;
-    float prefilteredCubeMipLevels = 0.0f;
-  } textures;
 
   // ============= Lighting =============
   struct LightSource {
@@ -49,6 +42,17 @@ class TAK_API PBRIBLScene : public VulkanBase {
     float debugViewInputs = 0;
     float debugViewEquation = 0;
   } shaderValuesParams;
+
+  struct UBOParamsSkybox {
+    glm::vec4 _pad0;
+    float exposure = 4.5f;
+    float gamma = 2.2f;
+  } uboParamsSkybox;
+
+  struct UniformBufferSkybox {
+    glm::mat4 proj;
+    glm::mat4 model;
+  } uboSkybox;
 
   // Scene matrices (per-frame UBO)
   struct UBOMatrices {
@@ -106,13 +110,12 @@ class TAK_API PBRIBLScene : public VulkanBase {
   // Descriptor sets
   struct DescriptorSets {
     VkDescriptorSet scene;
-    VkDescriptorSet skybox;
   };
   std::vector<DescriptorSets> descriptorSets;           // One per frame
   std::vector<VkDescriptorSet> descriptorSetsMeshData;  // One per frame
   VkDescriptorSet descriptorSetMaterials{VK_NULL_HANDLE};
 
-  VkDescriptorPool descriptorPool;
+  VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
 
   // ============= Pipeline =============
   // Push constants (per-draw call)
@@ -128,6 +131,14 @@ class TAK_API PBRIBLScene : public VulkanBase {
   TextureManager::Texture emptyTexture;      // White 1x1 texture
   bool displayBackground = true;
 
+  // skybox pipeline
+  VkPipeline skyboxPipeline = VK_NULL_HANDLE;
+  VkPipelineLayout skyboxPipelineLayout = VK_NULL_HANDLE;
+  VkDescriptorSetLayout skyboxDescriptorSetLayout = VK_NULL_HANDLE;
+  std::vector<VkDescriptorSet> skyboxDescriptorSets;
+  BufferManager::Buffer skyBoxParamBuffer;
+  void createSkyboxPipeline();
+
   // ============= Animation =============
   int32_t animationIndex = 0;
   float animationTimer = 0.0f;
@@ -137,7 +148,8 @@ class TAK_API PBRIBLScene : public VulkanBase {
   enum PBRWorkflows { PBR_WORKFLOW_METALLIC_ROUGHNESS = 0, PBR_WORKFLOW_SPECULAR_GLOSSINESS = 1 };
   // List of glTF extensions supported by this application
   // Models with un-supported extensions may not work/look as expected
-  const std::vector<std::string> supportedExtensions = {"KHR_texture_basisu", "KHR_materials_pbrSpecularGlossiness", "KHR_materials_unlit", "KHR_materials_emissive_strength"};
+  const std::vector<std::string> supportedExtensions = {"KHR_texture_basisu", "KHR_materials_pbrSpecularGlossiness",
+                                                        "KHR_materials_unlit", "KHR_materials_emissive_strength"};
 
   // ============= Private Methods =============
   void loadAssets();
@@ -151,5 +163,4 @@ class TAK_API PBRIBLScene : public VulkanBase {
   void setupDescriptors();
   void addPipelineSet(const std::string prefix, const std::string vertexShader, const std::string fragmentShader);
   void renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex, tak::Material::AlphaMode alphaMode);
-  void envMapLoadTest();
 };

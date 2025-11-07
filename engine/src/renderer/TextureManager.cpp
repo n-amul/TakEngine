@@ -1088,8 +1088,7 @@ TextureManager::Texture TextureManager::createCubemapFromEquirectangular(const s
     throw std::runtime_error("Failed to load equirectangular image: " + filepath);
   }
 
-  // Determine cubemap face size (typically 1/4 of equirect width for good quality)
-  const uint32_t faceSize = srcWidth / 4;
+  const uint32_t faceSize = 2048;  // hard coded for now
   const uint32_t mipLevels = static_cast<uint32_t>(floor(log2(faceSize)) + 1.0);
 
   spdlog::info("Creating cubemap: face size={}, mip levels={}", faceSize, mipLevels);

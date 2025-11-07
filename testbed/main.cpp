@@ -11,7 +11,7 @@
 int main() {
   try {
     spdlog::info("Main function started");
-    TriangleScene test;
+    PBRIBLScene test;
     test.run();
 
     spdlog::info("Main function ending normally");

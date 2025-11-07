@@ -9,9 +9,9 @@ void PBRIBLScene::loadResources() {
   descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
   shaderMeshDataBuffers.resize(MAX_FRAMES_IN_FLIGHT);
   descriptorSetsMeshData.resize(MAX_FRAMES_IN_FLIGHT);
-
   // Initialize PBR environment resources in base class
   initializePBREnvironment();
+  emptyTexture = textureManager->createDefault();
 
   loadAssets();  // Scene and environment loading entry point
   prepareUniformBuffers();
@@ -20,8 +20,23 @@ void PBRIBLScene::loadResources() {
 }
 
 void PBRIBLScene::createPipeline() {
-  // Skybox pipeline (background cube)
-  addPipelineSet("skybox", std::string(SHADER_DIR) + "/skybox.vert.spv", std::string(SHADER_DIR) + "/skybox.frag.spv");
+  // Create the pipeline layout ONCE here
+  const std::vector<VkDescriptorSetLayout> setLayouts = {descriptorSetLayouts.scene, descriptorSetLayouts.material,
+                                                         descriptorSetLayouts.meshDataBuffer,
+                                                         descriptorSetLayouts.materialBuffer};
+  VkPipelineLayoutCreateInfo pipelineLayoutCI{};
+  pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipelineLayoutCI.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+  pipelineLayoutCI.pSetLayouts = setLayouts.data();
+
+  VkPushConstantRange pushConstantRange{};
+  pushConstantRange.size = sizeof(MeshPushConstantBlock);
+  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  pipelineLayoutCI.pushConstantRangeCount = 1;
+  pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
+
+  VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
+  createSkyboxPipeline();
   // PBR pipelines
   addPipelineSet("pbr", std::string(SHADER_DIR) + "/pbribl.vert.spv", std::string(SHADER_DIR) + "/material_pbr.frag.spv");
   // KHR_materials_unlit
@@ -47,12 +62,12 @@ void PBRIBLScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t i
   vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
   // skybox render
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-                          &descriptorSets[currentFrame].skybox, 0, nullptr);
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines["skybox"]);
-  const VkDeviceSize offsets[1] = {0};
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 1,
+                          &skyboxDescriptorSets[currentFrame], 0, nullptr);
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline);
+  const VkDeviceSize offsetSkybox[1] = {0};
   for (tak::Node* node : models.skybox.nodes) {
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &models.skybox.vertices.buffer, offsets);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &models.skybox.vertices.buffer, offsetSkybox);
     vkCmdBindIndexBuffer(commandBuffer, models.skybox.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
     modelManager->drawNode(node, commandBuffer);
   }
@@ -139,13 +154,6 @@ void PBRIBLScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_
   }
 }
 
-void PBRIBLScene::envMapLoadTest() {
-  // For environment cube (HDR)
-  textures.environmentCube =
-      textureManager->loadHDRCubemapTexture(std::string(TEXTURE_DIR) + "/skybox/workshop.hdr", VK_FORMAT_R16G16B16A16_SFLOAT,
-                                            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-}
-
 void PBRIBLScene::updateScene(float deltaTime) {
   //  Update UBOs
   updateUniformData();
@@ -153,6 +161,7 @@ void PBRIBLScene::updateScene(float deltaTime) {
   //  update shader buffer
   bufferManager->updateBuffer(uniformBuffers[currentFrame].scene, &sceneUboMatrices, sizeof(sceneUboMatrices), 0);
   bufferManager->updateBuffer(uniformBuffers[currentFrame].params, &shaderValuesParams, sizeof(shaderValuesParams), 0);
+  bufferManager->updateBuffer(uniformBuffers[currentFrame].skybox, &uboSkybox, sizeof(uboSkybox), 0);
 
   // update animation and params
   if ((animate) && (models.scene.animations.size() > 0)) {
@@ -185,9 +194,110 @@ void PBRIBLScene::updateMeshDataBuffer(uint32_t index) {  // @todo: optimize (no
   bufferManager->updateBuffer(shaderMeshDataBuffers[index], shaderMeshData.data(), bufferSize, 0);
 }
 
+void PBRIBLScene::createSkyboxPipeline() {
+  spdlog::info("Creating skybox pipeline");
+  VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI{};
+  inputAssemblyStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  inputAssemblyStateCI.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+  VkPipelineRasterizationStateCreateInfo rasterizationStateCI{};
+  rasterizationStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  rasterizationStateCI.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterizationStateCI.cullMode = VK_CULL_MODE_NONE;
+  rasterizationStateCI.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizationStateCI.lineWidth = 1.0f;
+
+  VkPipelineColorBlendAttachmentState blendAttachmentState{};
+  blendAttachmentState.colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachmentState.blendEnable = VK_FALSE;
+
+  VkPipelineColorBlendStateCreateInfo colorBlendStateCI{};
+  colorBlendStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  colorBlendStateCI.attachmentCount = 1;
+  colorBlendStateCI.pAttachments = &blendAttachmentState;
+
+  VkPipelineDepthStencilStateCreateInfo depthStencilStateCI{};
+  depthStencilStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depthStencilStateCI.depthTestEnable = VK_FALSE;
+  depthStencilStateCI.depthWriteEnable = VK_FALSE;
+  depthStencilStateCI.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+  depthStencilStateCI.depthBoundsTestEnable = VK_FALSE;
+  depthStencilStateCI.stencilTestEnable = VK_FALSE;
+
+  VkPipelineViewportStateCreateInfo viewportStateCI{};
+  viewportStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewportStateCI.viewportCount = 1;
+  viewportStateCI.scissorCount = 1;
+
+  VkPipelineMultisampleStateCreateInfo multisampleStateCI{};
+  multisampleStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  if (multisampling) {
+    multisampleStateCI.rasterizationSamples = msaaSamples;
+  }
+
+  std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+  VkPipelineDynamicStateCreateInfo dynamicStateCI{};
+  dynamicStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dynamicStateCI.pDynamicStates = dynamicStateEnables.data();
+  dynamicStateCI.dynamicStateCount = static_cast<uint32_t>(dynamicStateEnables.size());
+
+  VkPipelineLayoutCreateInfo pipelineLayoutCI{};
+  pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipelineLayoutCI.setLayoutCount = 1;
+  pipelineLayoutCI.pSetLayouts = &skyboxDescriptorSetLayout;
+  pipelineLayoutCI.pushConstantRangeCount = 0;
+  pipelineLayoutCI.pPushConstantRanges = nullptr;
+  VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &skyboxPipelineLayout));
+
+  // Vertex bindings and attributes
+  VkVertexInputBindingDescription vertexInputBinding = tak::Vertex::getBindingDescription();
+  std::array<VkVertexInputAttributeDescription, 8> vertexInputAttributes = tak::Vertex::getAttributeDescriptions();
+
+  VkPipelineVertexInputStateCreateInfo vertexInputStateCI{};
+  vertexInputStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  vertexInputStateCI.vertexBindingDescriptionCount = 1;
+  vertexInputStateCI.pVertexBindingDescriptions = &vertexInputBinding;
+  vertexInputStateCI.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
+  vertexInputStateCI.pVertexAttributeDescriptions = vertexInputAttributes.data();
+
+  // Pipelines
+  std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+  shaderStages[0] = loadShader(std::string(SHADER_DIR) + "/skybox.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+  shaderStages[1] = loadShader(std::string(SHADER_DIR) + "/skybox.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
+  VkGraphicsPipelineCreateInfo pipelineCI{};
+  pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  pipelineCI.layout = skyboxPipelineLayout;
+  pipelineCI.renderPass = renderPass;
+  pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
+  pipelineCI.pVertexInputState = &vertexInputStateCI;
+  pipelineCI.pRasterizationState = &rasterizationStateCI;
+  pipelineCI.pColorBlendState = &colorBlendStateCI;
+  pipelineCI.pMultisampleState = &multisampleStateCI;
+  pipelineCI.pViewportState = &viewportStateCI;
+  pipelineCI.pDepthStencilState = &depthStencilStateCI;
+  pipelineCI.pDynamicState = &dynamicStateCI;
+  pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+  pipelineCI.pStages = shaderStages.data();
+  pipelineCI.subpass = 0;
+  pipelineCI.basePipelineHandle = VK_NULL_HANDLE;
+  pipelineCI.basePipelineIndex = -1;
+
+  // Fixed: Use pipelineCI instead of pipelineInfo
+  if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &skyboxPipeline) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create skybox graphics pipeline!");
+  }
+
+  // Cleanup shader modules
+  vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+  vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
+  spdlog::info("Skybox pipeline created successfully");
+}
+
 void PBRIBLScene::loadAssets() {
   // load scene
-  modelManager->destroyModel(models.scene);
   models.scene = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/buster_drone/scene.gltf");
   createMaterialBuffer();
   createMeshDataBuffer();
@@ -197,7 +307,6 @@ void PBRIBLScene::loadAssets() {
       spdlog::warn("Unsupported extension {}detected. Scene may not work or display as intended", ext);
     }
   }
-  modelManager->destroyModel(models.skybox);
   models.skybox = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/box/box.gltf");
 
   // Load environment using base class method
@@ -207,15 +316,12 @@ void PBRIBLScene::loadAssets() {
 void PBRIBLScene::loadSceneEnvironment(std::string& filename) {
   // Use base class to load environment and generate IBL maps
   loadEnvironment(filename);
-
-  // Update shader params with the mip levels from base class
-  shaderValuesParams.prefilteredCubeMipLevels = pbrEnvironment.prefilteredCubeMipLevels;
 }
 
 void PBRIBLScene::setupDescriptors() {
   /*
                         Descriptor Pool
-                */
+  */
   uint32_t imageSamplerCount = 0;
   uint32_t materialCount = 0;
   uint32_t meshCount = 0;
@@ -269,7 +375,20 @@ void PBRIBLScene::setupDescriptors() {
       descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayouts.scene;
       descriptorSetAllocInfo.descriptorSetCount = 1;
       vkAllocateDescriptorSets(device, &descriptorSetAllocInfo, &descriptorSets[i].scene);
+      VkDescriptorImageInfo irradianceInfo{};
+      irradianceInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      irradianceInfo.imageView = pbrEnvironment.irradianceCube.imageView;
+      irradianceInfo.sampler = pbrEnvironment.irradianceCube.sampler;
 
+      VkDescriptorImageInfo prefilteredInfo{};
+      prefilteredInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      prefilteredInfo.imageView = pbrEnvironment.prefilteredCube.imageView;
+      prefilteredInfo.sampler = pbrEnvironment.prefilteredCube.sampler;
+
+      VkDescriptorImageInfo lutBrdfInfo{};
+      lutBrdfInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      lutBrdfInfo.imageView = pbrEnvironment.lutBrdf.imageView;
+      lutBrdfInfo.sampler = pbrEnvironment.lutBrdf.sampler;
       std::array<VkWriteDescriptorSet, 5> writeDescriptorSets{};
 
       writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -291,21 +410,21 @@ void PBRIBLScene::setupDescriptors() {
       writeDescriptorSets[2].descriptorCount = 1;
       writeDescriptorSets[2].dstSet = descriptorSets[i].scene;
       writeDescriptorSets[2].dstBinding = 2;
-      writeDescriptorSets[2].pImageInfo = &pbrEnvironment.irradianceCube.descriptor;
+      writeDescriptorSets[2].pImageInfo = &irradianceInfo;
 
       writeDescriptorSets[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
       writeDescriptorSets[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       writeDescriptorSets[3].descriptorCount = 1;
       writeDescriptorSets[3].dstSet = descriptorSets[i].scene;
       writeDescriptorSets[3].dstBinding = 3;
-      writeDescriptorSets[3].pImageInfo = &pbrEnvironment.prefilteredCube.descriptor;
+      writeDescriptorSets[3].pImageInfo = &prefilteredInfo;
 
       writeDescriptorSets[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
       writeDescriptorSets[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       writeDescriptorSets[4].descriptorCount = 1;
       writeDescriptorSets[4].dstSet = descriptorSets[i].scene;
       writeDescriptorSets[4].dstBinding = 4;
-      writeDescriptorSets[4].pImageInfo = &pbrEnvironment.lutBrdf.descriptor;
+      writeDescriptorSets[4].pImageInfo = &lutBrdfInfo;
 
       vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, NULL);
     }
@@ -438,40 +557,79 @@ void PBRIBLScene::setupDescriptors() {
   }
 
   // Skybox (fixed set)
-  for (auto i = 0; i < uniformBuffers.size(); i++) {
-    VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
-    descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descriptorSetAllocInfo.descriptorPool = descriptorPool;
-    descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayouts.scene;
-    descriptorSetAllocInfo.descriptorSetCount = 1;
-    vkAllocateDescriptorSets(device, &descriptorSetAllocInfo, &descriptorSets[i].skybox);
+  {
+    std::array<VkDescriptorSetLayoutBinding, 3> bindingsSkybox = {
+        VkDescriptorSetLayoutBinding{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                     nullptr}};
 
-    std::array<VkWriteDescriptorSet, 3> writeDescriptorSets{};
+    VkDescriptorSetLayoutCreateInfo layoutInfoSkybox{};
+    layoutInfoSkybox.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfoSkybox.bindingCount = static_cast<uint32_t>(bindingsSkybox.size());
+    layoutInfoSkybox.pBindings = bindingsSkybox.data();
 
-    writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writeDescriptorSets[0].descriptorCount = 1;
-    writeDescriptorSets[0].dstSet = descriptorSets[i].skybox;
-    writeDescriptorSets[0].dstBinding = 0;
-    writeDescriptorSets[0].pBufferInfo = &uniformBuffers[i].skybox.descriptor;
+    if (vkCreateDescriptorSetLayout(device, &layoutInfoSkybox, nullptr, &skyboxDescriptorSetLayout) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create descriptor set layout!");
+    }
 
-    writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writeDescriptorSets[1].descriptorCount = 1;
-    writeDescriptorSets[1].dstSet = descriptorSets[i].skybox;
-    writeDescriptorSets[1].dstBinding = 1;
-    writeDescriptorSets[1].pBufferInfo = &uniformBuffers[i].params.descriptor;
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, skyboxDescriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
 
-    // Use base class prefiltered cube for skybox
-    writeDescriptorSets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeDescriptorSets[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writeDescriptorSets[2].descriptorCount = 1;
-    writeDescriptorSets[2].dstSet = descriptorSets[i].skybox;
-    writeDescriptorSets[2].dstBinding = 2;
-    writeDescriptorSets[2].pImageInfo = &pbrEnvironment.prefilteredCube.descriptor;
+    skyboxDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(device, &allocInfo, skyboxDescriptorSets.data()) != VK_SUCCESS) {
+      throw std::runtime_error("failed to allocate descriptor sets!");
+    }
 
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0,
-                           nullptr);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      VkDescriptorBufferInfo skyboxUBOBufferInfo{};
+      skyboxUBOBufferInfo.buffer = uniformBuffers[i].skybox.buffer;  // per-frame skybox UBO
+      skyboxUBOBufferInfo.offset = 0;
+      skyboxUBOBufferInfo.range = sizeof(UniformBufferSkybox);
+
+      VkDescriptorBufferInfo skyboxParamBufferInfo{};
+      skyboxParamBufferInfo.buffer = skyBoxParamBuffer.buffer;
+      skyboxParamBufferInfo.offset = 0;
+      skyboxParamBufferInfo.range = sizeof(uboParamsSkybox);
+
+      VkDescriptorImageInfo skyboxImageInfo{};
+      skyboxImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      skyboxImageInfo.imageView = pbrEnvironment.environmentCube.imageView;
+      skyboxImageInfo.sampler = pbrEnvironment.environmentCube.sampler;
+
+      // --- Write descriptors (binding 0 = UBO, 1 = params UBO, 2 = combined image sampler) ---
+      std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+      // binding 0 : per-frame skybox UBO (vertex)
+      descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[0].dstSet = skyboxDescriptorSets[i];
+      descriptorWrites[0].dstBinding = 0;
+      descriptorWrites[0].dstArrayElement = 0;
+      descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[0].descriptorCount = 1;
+      descriptorWrites[0].pBufferInfo = &skyboxUBOBufferInfo;
+      // binding 1 : params UBO (fragment)
+      descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[1].dstSet = skyboxDescriptorSets[i];
+      descriptorWrites[1].dstBinding = 1;
+      descriptorWrites[1].dstArrayElement = 0;
+      descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[1].descriptorCount = 1;
+      descriptorWrites[1].pBufferInfo = &skyboxParamBufferInfo;
+      // binding 2 : cubemap sampler (fragment)
+      descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[2].dstSet = skyboxDescriptorSets[i];
+      descriptorWrites[2].dstBinding = 2;
+      descriptorWrites[2].dstArrayElement = 0;
+      descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptorWrites[2].descriptorCount = 1;
+      descriptorWrites[2].pImageInfo = &skyboxImageInfo;
+
+      vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
   }
 }
 
@@ -522,21 +680,6 @@ void PBRIBLScene::addPipelineSet(const std::string prefix, const std::string ver
   dynamicStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
   dynamicStateCI.pDynamicStates = dynamicStateEnables.data();
   dynamicStateCI.dynamicStateCount = static_cast<uint32_t>(dynamicStateEnables.size());
-
-  // Pipeline layout
-  const std::vector<VkDescriptorSetLayout> setLayouts = {descriptorSetLayouts.scene, descriptorSetLayouts.material,
-                                                         descriptorSetLayouts.meshDataBuffer,
-                                                         descriptorSetLayouts.materialBuffer};
-  VkPipelineLayoutCreateInfo pipelineLayoutCI{};
-  pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  pipelineLayoutCI.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-  pipelineLayoutCI.pSetLayouts = setLayouts.data();
-  VkPushConstantRange pushConstantRange{};
-  pushConstantRange.size = sizeof(MeshPushConstantBlock);
-  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-  pipelineLayoutCI.pushConstantRangeCount = 1;
-  pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-  VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
   // Vertex bindings and attributes
   VkVertexInputBindingDescription vertexInputBinding = tak::Vertex::getBindingDescription();
@@ -694,19 +837,65 @@ void PBRIBLScene::createMeshDataBuffer() {
 }
 
 void PBRIBLScene::cleanupResources() {
-  for (auto& pipeline : pipelines) {
-    vkDestroyPipeline(device, pipeline.second, nullptr);
+  // Destroy all pipelines
+  for (auto& [name, pipeline] : pipelines) {
+    if (pipeline != VK_NULL_HANDLE) {
+      vkDestroyPipeline(device, pipeline, nullptr);
+    }
+  }
+  pipelines.clear();
+
+  // Clean up skybox pipeline resources
+  if (skyboxPipeline != VK_NULL_HANDLE) {
+    vkDestroyPipeline(device, skyboxPipeline, nullptr);
+    skyboxPipeline = VK_NULL_HANDLE;
   }
 
-  vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
-  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.material, nullptr);
-  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.materialBuffer, nullptr);
-  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.meshDataBuffer, nullptr);
+  if (skyboxPipelineLayout != VK_NULL_HANDLE) {
+    vkDestroyPipelineLayout(device, skyboxPipelineLayout, nullptr);
+    skyboxPipelineLayout = VK_NULL_HANDLE;
+  }
 
+  if (skyboxDescriptorSetLayout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, skyboxDescriptorSetLayout, nullptr);
+    skyboxDescriptorSetLayout = VK_NULL_HANDLE;
+  }
+
+  // Destroy pipeline layout
+  if (pipelineLayout != VK_NULL_HANDLE) {
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    pipelineLayout = VK_NULL_HANDLE;
+  }
+
+  // Destroy descriptor pool (this also frees all descriptor sets including skyboxDescriptorSets)
+  if (descriptorPool != VK_NULL_HANDLE) {
+    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    descriptorPool = VK_NULL_HANDLE;
+  }
+
+  // Destroy descriptor set layouts
+  if (descriptorSetLayouts.scene != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
+    descriptorSetLayouts.scene = VK_NULL_HANDLE;
+  }
+  if (descriptorSetLayouts.material != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.material, nullptr);
+    descriptorSetLayouts.material = VK_NULL_HANDLE;
+  }
+  if (descriptorSetLayouts.materialBuffer != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.materialBuffer, nullptr);
+    descriptorSetLayouts.materialBuffer = VK_NULL_HANDLE;
+  }
+  if (descriptorSetLayouts.meshDataBuffer != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.meshDataBuffer, nullptr);
+    descriptorSetLayouts.meshDataBuffer = VK_NULL_HANDLE;
+  }
+
+  // Clean up models, buffers, textures...
   modelManager->destroyModel(models.scene);
   modelManager->destroyModel(models.skybox);
 
+  // Clean up uniform buffers and skybox param buffer
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     bufferManager->destroyBuffer(uniformBuffers[i].params);
     bufferManager->destroyBuffer(uniformBuffers[i].skybox);
@@ -714,6 +903,10 @@ void PBRIBLScene::cleanupResources() {
     bufferManager->destroyBuffer(shaderMeshDataBuffers[i]);
   }
 
+  // Clean up skybox param buffer
+  bufferManager->destroyBuffer(skyBoxParamBuffer);
+
+  // Clean up other buffers
   bufferManager->destroyBuffer(shaderMaterialBuffer);
   textureManager->destroyTexture(emptyTexture);
   cleanupPBREnvironment();
@@ -724,12 +917,15 @@ void PBRIBLScene::prepareUniformBuffers() {
     uniformBuffer.scene =
         bufferManager->createBuffer(sizeof(sceneUboMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
-    uniformBuffer.skybox =
-        bufferManager->createBuffer(sizeof(skyboxUboMatrices), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     uniformBuffer.params =
         bufferManager->createBuffer(sizeof(shaderValuesParams), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    // skybox
+    uniformBuffer.skybox =
+        bufferManager->createBuffer(sizeof(uboSkybox), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    skyBoxParamBuffer = bufferManager->createGPULocalBuffer(
+        &uboParamsSkybox, sizeof(uboParamsSkybox), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
   }
   updateUniformData();
 }
@@ -759,9 +955,12 @@ void PBRIBLScene::updateUniformData() {
   sceneUboMatrices.camPos = glm::vec3(cv[3]);
 
   // Skybox
-  skyboxUboMatrices.projection = camera.getProjectionMatrix(aspectRatio);
-  skyboxUboMatrices.view = camera.getViewMatrix();
-  skyboxUboMatrices.model = glm::mat4(glm::mat3(camera.getViewMatrix()));
+  uboSkybox.proj = sceneUboMatrices.projection;  // Same projection as main scene
+  // For skybox, we want the view matrix without translation
+  // This keeps the skybox centered around the camera
+  glm::mat4 viewWithoutTranslation = glm::mat4(glm::mat3(camera.getViewMatrix()));
+  uboSkybox.model = viewWithoutTranslation;
+  uboSkybox.model = glm::rotate(uboSkybox.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 }
 
 void PBRIBLScene::updateParams() {
