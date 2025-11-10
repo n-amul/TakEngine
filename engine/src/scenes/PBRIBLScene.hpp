@@ -29,7 +29,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
   // ============= Lighting =============
   struct LightSource {
     glm::vec3 color = glm::vec3(1.0f);
-    glm::vec3 rotation = glm::vec3(50.0f, 0.0f, 40.0f);  // For directional light
+    glm::vec3 rotation = glm::vec3(50.0f, 0.0f, 40.0f);
   } lightSource;
 
   // ============= Uniform Data Structures =============
@@ -128,7 +128,7 @@ class TAK_API PBRIBLScene : public VulkanBase {
   VkPipelineLayout pipelineLayout{VK_NULL_HANDLE};
   std::unordered_map<std::string, VkPipeline> pipelines;
   VkPipeline boundPipeline{VK_NULL_HANDLE};  // Track current bound pipeline
-  TextureManager::Texture emptyTexture;      // White 1x1 texture
+  TextureManager::Texture emptyTexture;      // White texture
   bool displayBackground = true;
 
   // skybox pipeline

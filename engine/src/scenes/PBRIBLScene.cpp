@@ -16,11 +16,11 @@ void PBRIBLScene::loadResources() {
   loadAssets();  // Scene and environment loading entry point
   prepareUniformBuffers();
   setupDescriptors();
-  createPipeline();
 }
 
 void PBRIBLScene::createPipeline() {
   // Create the pipeline layout ONCE here
+  spdlog::info("Creating pipelines - current count: {}", pipelines.size());
   const std::vector<VkDescriptorSetLayout> setLayouts = {descriptorSetLayouts.scene, descriptorSetLayouts.material,
                                                          descriptorSetLayouts.meshDataBuffer,
                                                          descriptorSetLayouts.materialBuffer};
@@ -658,8 +658,8 @@ void PBRIBLScene::addPipelineSet(const std::string prefix, const std::string ver
 
   VkPipelineDepthStencilStateCreateInfo depthStencilStateCI{};
   depthStencilStateCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-  depthStencilStateCI.depthTestEnable = (prefix == "skybox" ? VK_FALSE : VK_TRUE);
-  depthStencilStateCI.depthWriteEnable = (prefix == "skybox" ? VK_FALSE : VK_TRUE);
+  depthStencilStateCI.depthTestEnable = VK_TRUE;
+  depthStencilStateCI.depthWriteEnable = VK_TRUE;
   depthStencilStateCI.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
   depthStencilStateCI.front = depthStencilStateCI.back;
   depthStencilStateCI.back.compareOp = VK_COMPARE_OP_ALWAYS;
@@ -837,6 +837,9 @@ void PBRIBLScene::createMeshDataBuffer() {
 }
 
 void PBRIBLScene::cleanupResources() {
+  spdlog::info("Cleanup called - destroying {} pipelines", pipelines.size());
+  spdlog::info("pipelineLayout: {}", (void*)pipelineLayout);
+  spdlog::info("skyboxPipelineLayout: {}", (void*)skyboxPipelineLayout);
   // Destroy all pipelines
   for (auto& [name, pipeline] : pipelines) {
     if (pipeline != VK_NULL_HANDLE) {
