@@ -143,7 +143,14 @@ class TAK_API PBRIBLScene : public VulkanBase {
   int32_t animationIndex = 0;
   float animationTimer = 0.0f;
   bool animate = true;
-
+  // ui
+  UI* ui{nullptr};
+  void updateOverlay(float deltaTime);
+  bool showTexture = true;
+  float fps = 0.0f;
+  float fpsTimer = 0.0f;
+  uint32_t frameCounter = 0;
+  std::vector<ImTextureID> imguiTexId;
   // ============= defines =============
   enum PBRWorkflows { PBR_WORKFLOW_METALLIC_ROUGHNESS = 0, PBR_WORKFLOW_SPECULAR_GLOSSINESS = 1 };
   // List of glTF extensions supported by this application

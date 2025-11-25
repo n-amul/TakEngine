@@ -50,7 +50,7 @@ struct UI {
     // Create ImGui context
     ImGui::CreateContext();
 
-    // Initialize ImGui for GLFW - this handles ALL input automatically!
+    // Initialize ImGui for GLFW - this handles ALL input automatically
     ImGui_ImplGlfw_InitForVulkan(window, true);  // true = install callbacks
 
     // Configure ImGui

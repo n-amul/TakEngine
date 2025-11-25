@@ -16,6 +16,11 @@ void PBRIBLScene::loadResources() {
   loadAssets();  // Scene and environment loading entry point
   prepareUniformBuffers();
   setupDescriptors();
+
+  ui = new UI(textureManager, renderPass, msaaSamples, std::string(SHADER_DIR), window);
+  for (auto& tex : models.scene.textures) {
+    imguiTexId.push_back(ui->addTexture(tex.sampler, tex.imageView));
+  }
 }
 
 void PBRIBLScene::createPipeline() {
@@ -92,6 +97,7 @@ void PBRIBLScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t i
   for (auto node : models.scene.nodes) {
     renderNode(commandBuffer, node, imageIndex, tak::Material::ALPHAMODE_BLEND);
   }
+  ui->draw(commandBuffer);
 }
 
 void PBRIBLScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_t ImageIndex,
@@ -155,6 +161,7 @@ void PBRIBLScene::renderNode(VkCommandBuffer cmdBuffer, tak::Node* node, uint32_
 }
 
 void PBRIBLScene::updateScene(float deltaTime) {
+  updateOverlay(deltaTime);
   //  Update UBOs
   updateUniformData();
   updateParams();
@@ -849,50 +856,33 @@ void PBRIBLScene::cleanupResources() {
   pipelines.clear();
 
   // Clean up skybox pipeline resources
-  if (skyboxPipeline != VK_NULL_HANDLE) {
-    vkDestroyPipeline(device, skyboxPipeline, nullptr);
-    skyboxPipeline = VK_NULL_HANDLE;
-  }
+  vkDestroyPipeline(device, skyboxPipeline, nullptr);
+  skyboxPipeline = VK_NULL_HANDLE;
 
-  if (skyboxPipelineLayout != VK_NULL_HANDLE) {
-    vkDestroyPipelineLayout(device, skyboxPipelineLayout, nullptr);
-    skyboxPipelineLayout = VK_NULL_HANDLE;
-  }
+  vkDestroyPipelineLayout(device, skyboxPipelineLayout, nullptr);
+  skyboxPipelineLayout = VK_NULL_HANDLE;
 
-  if (skyboxDescriptorSetLayout != VK_NULL_HANDLE) {
-    vkDestroyDescriptorSetLayout(device, skyboxDescriptorSetLayout, nullptr);
-    skyboxDescriptorSetLayout = VK_NULL_HANDLE;
-  }
+  vkDestroyDescriptorSetLayout(device, skyboxDescriptorSetLayout, nullptr);
+  skyboxDescriptorSetLayout = VK_NULL_HANDLE;
 
   // Destroy pipeline layout
-  if (pipelineLayout != VK_NULL_HANDLE) {
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-    pipelineLayout = VK_NULL_HANDLE;
-  }
+  vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+  pipelineLayout = VK_NULL_HANDLE;
 
-  // Destroy descriptor pool (this also frees all descriptor sets including skyboxDescriptorSets)
-  if (descriptorPool != VK_NULL_HANDLE) {
-    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-    descriptorPool = VK_NULL_HANDLE;
-  }
+  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+  descriptorPool = VK_NULL_HANDLE;
 
-  // Destroy descriptor set layouts
-  if (descriptorSetLayouts.scene != VK_NULL_HANDLE) {
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
-    descriptorSetLayouts.scene = VK_NULL_HANDLE;
-  }
-  if (descriptorSetLayouts.material != VK_NULL_HANDLE) {
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.material, nullptr);
-    descriptorSetLayouts.material = VK_NULL_HANDLE;
-  }
-  if (descriptorSetLayouts.materialBuffer != VK_NULL_HANDLE) {
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.materialBuffer, nullptr);
-    descriptorSetLayouts.materialBuffer = VK_NULL_HANDLE;
-  }
-  if (descriptorSetLayouts.meshDataBuffer != VK_NULL_HANDLE) {
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.meshDataBuffer, nullptr);
-    descriptorSetLayouts.meshDataBuffer = VK_NULL_HANDLE;
-  }
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
+  descriptorSetLayouts.scene = VK_NULL_HANDLE;
+
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.material, nullptr);
+  descriptorSetLayouts.material = VK_NULL_HANDLE;
+
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.materialBuffer, nullptr);
+  descriptorSetLayouts.materialBuffer = VK_NULL_HANDLE;
+
+  vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.meshDataBuffer, nullptr);
+  descriptorSetLayouts.meshDataBuffer = VK_NULL_HANDLE;
 
   // Clean up models, buffers, textures...
   modelManager->destroyModel(models.scene);
@@ -912,6 +902,8 @@ void PBRIBLScene::cleanupResources() {
   // Clean up other buffers
   bufferManager->destroyBuffer(shaderMaterialBuffer);
   textureManager->destroyTexture(emptyTexture);
+
+  delete ui;
   cleanupPBREnvironment();
 }
 
@@ -971,4 +963,47 @@ void PBRIBLScene::updateParams() {
       glm::vec4(sin(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)),
                 sin(glm::radians(lightSource.rotation.y)),
                 cos(glm::radians(lightSource.rotation.x)) * cos(glm::radians(lightSource.rotation.y)), 0.0f);
+}
+
+void PBRIBLScene::updateOverlay(float deltaTime) {
+  // FPS calculation
+  fpsTimer += deltaTime;
+  frameCounter++;
+  if (fpsTimer >= 1.0f) {
+    fps = static_cast<float>(frameCounter) / fpsTimer;
+    fpsTimer = 0.0f;
+    frameCounter = 0;
+  }
+
+  // Start new ImGui frame - ImGui_ImplGlfw handles input automatically
+  ui->newFrame();
+
+  // Create overlay window
+  ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(300, 250), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Debug Info", nullptr);
+
+  ui->text("FPS: %.1f", fps);
+  ui->text("Frame time: %.3f ms", deltaTime * 1000.0f);
+
+  ImGui::Separator();
+
+  ui->checkbox("Show Texture", &showTexture);
+
+  if (showTexture) {
+    for (int i = 0; i < imguiTexId.size(); i++) {
+      ImGui::Separator();
+      ImGui::Image(imguiTexId[i], ImVec2(128, 128));
+    }
+  }
+  ImGui::End();
+
+  ImGui::Render();
+
+  // Update push constants
+  ImGuiIO& io = ImGui::GetIO();
+  ui->pushConstBlock.scale = glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
+  ui->pushConstBlock.translate = glm::vec2(-1.0f);
+
+  ui->updateBuffers();
 }
