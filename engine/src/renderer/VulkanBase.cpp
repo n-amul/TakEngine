@@ -917,6 +917,12 @@ void VulkanBase::framebufferResizeCallback(GLFWwindow* window, int width, int he
 }
 // input events
 void VulkanBase::processInput(float deltaTime) {
+  ImGuiIO& io = ImGui::GetIO();
+
+  // Don't process camera movement if ImGui wants keyboard
+  if (io.WantCaptureKeyboard) {
+    return;
+  }
   // Movement keys
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camera.moveForward();
   if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.moveBackward();
@@ -990,6 +996,11 @@ void VulkanBase::keyCallback(GLFWwindow* window, int key, int scancode, int acti
 void VulkanBase::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
   auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
 
+  ImGuiIO& io = ImGui::GetIO();
+  if (io.WantCaptureMouse) {
+    return;
+  }
+
   if (!app->mouseCaptured) {
     app->onMouseMove(xpos, ypos);
     return;
@@ -1017,6 +1028,11 @@ void VulkanBase::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 void VulkanBase::scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
   auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
 
+  ImGuiIO& io = ImGui::GetIO();
+  if (io.WantCaptureMouse) {
+    return;
+  }
+
   // Adjust camera FOV with scroll
   float currentFov = app->camera.getFov();
   currentFov -= static_cast<float>(yoffset) * 2.0f;
@@ -1026,7 +1042,10 @@ void VulkanBase::scrollCallback(GLFWwindow* window, double xoffset, double yoffs
 
 void VulkanBase::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   auto app = reinterpret_cast<VulkanBase*>(glfwGetWindowUserPointer(window));
-
+  ImGuiIO& io = ImGui::GetIO();
+  if (io.WantCaptureMouse) {
+    return;
+  }
   // Middle mouse button to reset FOV
   if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS) {
     app->camera.setFov(45.0f);

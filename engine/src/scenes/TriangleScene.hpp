@@ -97,6 +97,14 @@ class TAK_API TriangleScene : public VulkanBase {
   std::vector<BufferManager::Buffer> skyboxUniformBuffers;
   BufferManager::Buffer skyBoxParamBuffer;
   void createSkyboxPipeline();
+  // ui
+  UI* ui{nullptr};
+  void updateOverlay(float deltaTime);
+  bool showTexture = true;
+  float fps = 0.0f;
+  float fpsTimer = 0.0f;
+  uint32_t frameCounter = 0;
+  ImTextureID imguiTexId;
 
   //+Z = up, +X = right, +Y = forward
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};

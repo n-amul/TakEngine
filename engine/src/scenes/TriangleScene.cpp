@@ -19,7 +19,7 @@ void TriangleScene::loadResources() {
   loadEnvironment(std::string(TEXTURE_DIR) + "/skybox/workshop.hdr");
   skybox = modelManager->createModelFromFile(std::string(MODEL_DIR) + "/box/box.gltf");
   spdlog::info("Loading triangle resources");
-  // scene objs
+
   createDescriptorSetLayout();
   createTextures();
   createVertexBuffer();
@@ -27,6 +27,10 @@ void TriangleScene::loadResources() {
   createUniformBuffers();
   createDescriptorPool();
   createDescriptorSets();
+
+  // Pass window to UI constructor
+  ui = new UI(textureManager, renderPass, msaaSamples, std::string(SHADER_DIR), window);
+  imguiTexId = ui->addTexture(rectTexture.sampler, rectTexture.imageView);
 }
 
 void TriangleScene::createPipeline() {
@@ -529,9 +533,14 @@ void TriangleScene::recordRenderCommands(VkCommandBuffer commandBuffer, uint32_t
   vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
                           &descriptorSets[currentFrame], 0, nullptr);
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+  ui->draw(commandBuffer);
 }
 
-void TriangleScene::updateScene(float deltaTime) { updateUniformBuffer(deltaTime); }
+void TriangleScene::updateScene(float deltaTime) {
+  updateOverlay(deltaTime);
+  updateUniformBuffer(deltaTime);
+}
 
 void TriangleScene::onResize(int width, int height) {
   // The base class already handles swapchain recreation
@@ -574,4 +583,48 @@ void TriangleScene::cleanupResources() {
 
   spdlog::info("Triangle resources cleaned up");
   cleanupPBREnvironment();
+  delete ui;
+}
+
+void TriangleScene::updateOverlay(float deltaTime) {
+  // FPS calculation
+  fpsTimer += deltaTime;
+  frameCounter++;
+  if (fpsTimer >= 1.0f) {
+    fps = static_cast<float>(frameCounter) / fpsTimer;
+    fpsTimer = 0.0f;
+    frameCounter = 0;
+  }
+
+  // Start new ImGui frame - ImGui_ImplGlfw handles input automatically
+  ui->newFrame();
+
+  // Create overlay window
+  ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(300, 250), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Debug Info", nullptr);
+
+  ui->text("FPS: %.1f", fps);
+  ui->text("Frame time: %.3f ms", deltaTime * 1000.0f);
+
+  ImGui::Separator();
+
+  ui->checkbox("Show Texture", &showTexture);
+
+  if (showTexture) {
+    ImGui::Separator();
+    ImGui::Text("Texture Preview:");
+    ImGui::Image(imguiTexId, ImVec2(128, 128));
+  }
+
+  ImGui::End();
+
+  ImGui::Render();
+
+  // Update push constants
+  ImGuiIO& io = ImGui::GetIO();
+  ui->pushConstBlock.scale = glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
+  ui->pushConstBlock.translate = glm::vec2(-1.0f);
+
+  ui->updateBuffers();
 }

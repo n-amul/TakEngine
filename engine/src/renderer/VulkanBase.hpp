@@ -18,6 +18,7 @@
 #include "VulkanContext.hpp"
 #include "core/QuaternionCamera.hpp"
 #include "defines.hpp"
+#include "ui.hpp"
 
 class GLFWwindow;
 

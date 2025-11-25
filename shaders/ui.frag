@@ -1,9 +1,3 @@
-/* Copyright (c) 2018-2023, Sascha Willems
- *
- * SPDX-License-Identifier: MIT
- *
- */
-
 #version 450
 
 layout (binding = 0) uniform sampler2D fontSampler;
