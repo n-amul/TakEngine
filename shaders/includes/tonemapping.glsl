@@ -1,9 +1,3 @@
-/* Copyright (c) 2018-2024, Sascha Willems
- *
- * SPDX-License-Identifier: MIT
- *
- */
-
 // From http://filmicworlds.com/blog/filmic-tonemapping-operators/
 vec3 Uncharted2Tonemap(vec3 color)
 {

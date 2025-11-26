@@ -1,9 +1,3 @@
-/* Copyright (c) 2018-2023, Sascha Willems
- *
- * SPDX-License-Identifier: MIT
- *
- */
-
 vec4 SRGBtoLINEAR(vec4 srgbIn)
 {
 	#define MANUAL_SRGB 1

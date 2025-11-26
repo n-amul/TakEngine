@@ -43,12 +43,22 @@ void VulkanDeferredBase::mainLoop() {
 
   vkDeviceWaitIdle(device);
 }
-
+/*
+vkWaitForFences          → CPU waits for previous frame's GPU work to complete
+         ↓
+vkAcquireNextImageKHR    → Get image index, semaphore signaled when image ready
+         ↓
+vkQueueSubmit            → GPU waits on imageAvailableSemaphore before COLOR_ATTACHMENT_OUTPUT
+                         → GPU signals renderFinishedSemaphore when done
+                         → GPU signals fence when done
+         ↓
+vkQueuePresentKHR        → Presentation waits on renderFinishedSemaphore
+*/
 void VulkanDeferredBase::drawFrame() {
-  // Wait until the previous frame has finished
+  // Wait until the previous frame(same frame #) has finished, we are in host-cpu side
   vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
-  // Acquire image from swap chain
+  // Acquire image that are done displaying from swap chain
   uint32_t imageIndex;
   VkResult res = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE,
                                        &imageIndex);
@@ -60,7 +70,7 @@ void VulkanDeferredBase::drawFrame() {
     throw std::runtime_error("failed to acquire swap chain image!");
   }
 
-  // Only reset fence after successful acquire
+  // reset current frame: cpu didn't recieve image from gpu
   vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
   vkResetCommandBuffer(commandBuffers[currentFrame], 0);
@@ -125,12 +135,11 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   geometryPassInfo.renderArea.offset = {0, 0};
   geometryPassInfo.renderArea.extent = swapChainExtent;
 
-  std::array<VkClearValue, 5> geometryClearValues{};
-  geometryClearValues[0].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Position
-  geometryClearValues[1].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Normal
-  geometryClearValues[2].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Albedo
-  geometryClearValues[3].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Material
-  geometryClearValues[4].depthStencil = {1.0f, 0};            // Depth
+  std::array<VkClearValue, 4> geometryClearValues{};
+  geometryClearValues[0].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Normal
+  geometryClearValues[1].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Albedo
+  geometryClearValues[2].color = {{0.0f, 0.0f, 0.0f, 0.0f}};  // Material
+  geometryClearValues[3].depthStencil = {1.0f, 0};            // Depth
 
   geometryPassInfo.clearValueCount = static_cast<uint32_t>(geometryClearValues.size());
   geometryPassInfo.pClearValues = geometryClearValues.data();
@@ -141,102 +150,60 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   recordGeometryCommands(commandBuffer);
 
   vkCmdEndRenderPass(commandBuffer);
-
   // ==== LIGHTING PASS ====
-  VkRenderPassBeginInfo lightingPassInfo{};
-  lightingPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  lightingPassInfo.renderPass = lightingRenderPass;
-  lightingPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
-  lightingPassInfo.renderArea.offset = {0, 0};
-  lightingPassInfo.renderArea.extent = swapChainExtent;
 
-  std::array<VkClearValue, 1> lightingClearValues{};
-  lightingClearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-
-  lightingPassInfo.clearValueCount = static_cast<uint32_t>(lightingClearValues.size());
-  lightingPassInfo.pClearValues = lightingClearValues.data();
-
-  vkCmdBeginRenderPass(commandBuffer, &lightingPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-  // Record lighting pass commands from derived class
-  recordLightingCommands(commandBuffer);
-
-  vkCmdEndRenderPass(commandBuffer);
-
-  if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-    throw std::runtime_error("failed to record command buffer!");
-  }
+  VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 }
 
 // G-Buffer Creation
-
 void VulkanDeferredBase::createGBuffer() {
-  VkFormat positionFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
-  VkFormat normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-  VkFormat albedoFormat = VK_FORMAT_R8G8B8A8_UNORM;
-  VkFormat materialFormat = VK_FORMAT_R8G8B8A8_UNORM;
+  // Formats for G-Buffer
+  // normal: RGB=normal, A=metallic
+  // albedo: RGB=albedo, A=AO
+  // material: R=roughness, GBA=emissive (LDR emissive)
+  static constexpr VkFormat GBUFFER_NORMAL_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
+  static constexpr VkFormat GBUFFER_ALBEDO_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+  static constexpr VkFormat GBUFFER_MATERIAL_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+  VkFormat DEPTH_FORMAT = depthBuffer.format;
 
   // Create G-Buffer textures
-  textureManager->InitTexture(gBuffer.position, swapChainExtent.width, swapChainExtent.height, positionFormat,
+  textureManager->InitTexture(gBuffer.normal, swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT,
                               VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  gBuffer.position.imageView =
-      textureManager->createImageView(gBuffer.position.image, positionFormat, VK_IMAGE_ASPECT_COLOR_BIT);
-  gBuffer.position.sampler = textureManager->createTextureSampler();
-
-  textureManager->InitTexture(gBuffer.normal, swapChainExtent.width, swapChainExtent.height, normalFormat,
-                              VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  gBuffer.normal.imageView = textureManager->createImageView(gBuffer.normal.image, normalFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+  gBuffer.normal.imageView =
+      textureManager->createImageView(gBuffer.normal.image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
   gBuffer.normal.sampler = textureManager->createTextureSampler();
 
-  textureManager->InitTexture(gBuffer.albedo, swapChainExtent.width, swapChainExtent.height, albedoFormat,
+  textureManager->InitTexture(gBuffer.albedo, swapChainExtent.width, swapChainExtent.height, GBUFFER_ALBEDO_FORMAT,
                               VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  gBuffer.albedo.imageView = textureManager->createImageView(gBuffer.albedo.image, albedoFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+  gBuffer.albedo.imageView =
+      textureManager->createImageView(gBuffer.albedo.image, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
   gBuffer.albedo.sampler = textureManager->createTextureSampler();
 
-  textureManager->InitTexture(gBuffer.material, swapChainExtent.width, swapChainExtent.height, materialFormat,
+  textureManager->InitTexture(gBuffer.material, swapChainExtent.width, swapChainExtent.height, GBUFFER_MATERIAL_FORMAT,
                               VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   gBuffer.material.imageView =
-      textureManager->createImageView(gBuffer.material.image, materialFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+      textureManager->createImageView(gBuffer.material.image, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
   gBuffer.material.sampler = textureManager->createTextureSampler();
 
-  // Transition layouts for shader usage
-  VkCommandBuffer cmdBuf = cmdUtils->beginSingleTimeCommands();
-  textureManager->transitionImageLayout(gBuffer.position, VK_IMAGE_LAYOUT_UNDEFINED,
-                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, cmdBuf);
-  textureManager->transitionImageLayout(gBuffer.normal, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                        cmdBuf);
-  textureManager->transitionImageLayout(gBuffer.albedo, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                        cmdBuf);
-  textureManager->transitionImageLayout(gBuffer.material, VK_IMAGE_LAYOUT_UNDEFINED,
-                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, cmdBuf);
-  cmdUtils->endSingleTimeCommands(cmdBuf);
+  // NOTE: No manual layout transitions needed here
+  // The render pass will handle transitions:
+  //   UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL (geometry pass)
+  //   COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL (end of geometry pass)
 
-  // Create descriptor set layout for G-Buffer
+  // Create descriptor set layout for G-Buffer (used in lighting pass)
+  // Bindings: normal, albedo, material, depth
   std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
 
-  bindings[0].binding = 0;
-  bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  bindings[0].descriptorCount = 1;
-  bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  bindings[1].binding = 1;
-  bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  bindings[1].descriptorCount = 1;
-  bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  bindings[2].binding = 2;
-  bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  bindings[2].descriptorCount = 1;
-  bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  bindings[3].binding = 3;
-  bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  bindings[3].descriptorCount = 1;
-  bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  for (uint32_t i = 0; i < 4; i++) {
+    bindings[i].binding = i;
+    bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[i].descriptorCount = 1;
+    bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[i].pImmutableSamplers = nullptr;
+  }
 
   VkDescriptorSetLayoutCreateInfo layoutInfo{};
   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -248,21 +215,21 @@ void VulkanDeferredBase::createGBuffer() {
   }
 
   // Create descriptor pool
-  std::array<VkDescriptorPoolSize, 1> poolSizes{};
-  poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  poolSizes[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size() * 4);
+  VkDescriptorPoolSize poolSize{};
+  poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size() * 4);  // 4 textures per set
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-  poolInfo.pPoolSizes = poolSizes.data();
+  poolInfo.poolSizeCount = 1;
+  poolInfo.pPoolSizes = &poolSize;
   poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
   if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &gBuffer.descriptorPool) != VK_SUCCESS) {
     throw std::runtime_error("failed to create G-Buffer descriptor pool!");
   }
 
-  // Create descriptor sets
+  // Allocate descriptor sets
   std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), gBuffer.descriptorSetLayout);
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -279,24 +246,27 @@ void VulkanDeferredBase::createGBuffer() {
   for (size_t i = 0; i < swapChainImages.size(); i++) {
     std::array<VkDescriptorImageInfo, 4> imageInfos{};
 
+    // Binding 0: Normal + Metallic
     imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[0].imageView = gBuffer.position.imageView;
-    imageInfos[0].sampler = gBuffer.position.sampler;
+    imageInfos[0].imageView = gBuffer.normal.imageView;
+    imageInfos[0].sampler = gBuffer.normal.sampler;
 
+    // Binding 1: Albedo + AO
     imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[1].imageView = gBuffer.normal.imageView;
-    imageInfos[1].sampler = gBuffer.normal.sampler;
+    imageInfos[1].imageView = gBuffer.albedo.imageView;
+    imageInfos[1].sampler = gBuffer.albedo.sampler;
 
+    // Binding 2: Material (Roughness + Emissive)
     imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[2].imageView = gBuffer.albedo.imageView;
-    imageInfos[2].sampler = gBuffer.albedo.sampler;
+    imageInfos[2].imageView = gBuffer.material.imageView;
+    imageInfos[2].sampler = gBuffer.material.sampler;
 
-    imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[3].imageView = gBuffer.material.imageView;
-    imageInfos[3].sampler = gBuffer.material.sampler;
+    // Binding 3: Depth (for position reconstruction)
+    imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    imageInfos[3].imageView = depthBuffer.imageView;
+    imageInfos[3].sampler = depthBuffer.sampler;
 
     std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
-
     for (uint32_t j = 0; j < 4; j++) {
       descriptorWrites[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
       descriptorWrites[j].dstSet = gBuffer.descriptorSets[i];
@@ -315,123 +285,107 @@ void VulkanDeferredBase::cleanupGBuffer() {
   vkDestroyDescriptorPool(device, gBuffer.descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, gBuffer.descriptorSetLayout, nullptr);
 
-  textureManager->destroyTexture(gBuffer.position);
   textureManager->destroyTexture(gBuffer.normal);
   textureManager->destroyTexture(gBuffer.albedo);
   textureManager->destroyTexture(gBuffer.material);
 }
-
-// Full-screen Quad Creation
-
-void VulkanDeferredBase::createFullscreenQuad() {
-  // Vertices for full-screen quad
-  struct QuadVertex {
-    glm::vec2 pos;
-    glm::vec2 uv;
-  };
-
-  std::vector<QuadVertex> vertices = {{{-1.0f, -1.0f}, {0.0f, 0.0f}},
-                                      {{1.0f, -1.0f}, {1.0f, 0.0f}},
-                                      {{1.0f, 1.0f}, {1.0f, 1.0f}},
-                                      {{-1.0f, 1.0f}, {0.0f, 1.0f}}};
-
-  std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
-
-  // Create vertex buffer
-  VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-  fullscreenQuad.vertexBuffer =
-      bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
-  bufferManager->updateBuffer(fullscreenQuad.vertexBuffer, vertices.data(), bufferSize, 0);
-  // Create index buffer
-  VkDeviceSize IndexBufferSize = sizeof(indices[0]) * indices.size();
-  fullscreenQuad.indexBuffer =
-      bufferManager->createBuffer(IndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
-
-  bufferManager->updateBuffer(fullscreenQuad.indexBuffer, indices.data(), IndexBufferSize, 0);
-
-  fullscreenQuad.indexCount = static_cast<uint32_t>(indices.size());
-}
-
 // Render Passes
 
 void VulkanDeferredBase::createRenderPasses() {
   // ==== GEOMETRY RENDER PASS ====
   {
-    std::array<VkAttachmentDescription, 5> attachments{};
+    // Attachment 0: Normal (world-space normals)
+    VkAttachmentDescription normalAttachment{};
+    normalAttachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;  // GBUFFER_NORMAL_FORMAT
+    normalAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    normalAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    normalAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // Need to read in lighting pass
+    normalAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    normalAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    normalAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    normalAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    // Position attachment
-    attachments[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // Attachment 1: Albedo (base color)
+    VkAttachmentDescription albedoAttachment{};
+    albedoAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    albedoAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    albedoAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    albedoAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    albedoAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    albedoAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    albedoAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    albedoAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    // Normal attachment
-    attachments[1].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[1].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // Attachment 2: Material (roughness, metallic, ao, etc.)
+    VkAttachmentDescription materialAttachment{};
+    materialAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    materialAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    materialAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    materialAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    materialAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    materialAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    materialAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    materialAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    // Albedo attachment
-    attachments[2].format = VK_FORMAT_R8G8B8A8_UNORM;
-    attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[2].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // Attachment 3: Depth
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = depthBuffer.format;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // May need depth in lighting pass
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-    // Material attachment
-    attachments[3].format = VK_FORMAT_R8G8B8A8_UNORM;
-    attachments[3].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[3].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[3].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachments[3].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[3].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[3].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[3].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    std::array<VkAttachmentDescription, 4> attachments = {normalAttachment, albedoAttachment, materialAttachment,
+                                                          depthAttachment};
 
-    // Depth attachment
-    attachments[4].format = depthBuffer.format;
-    attachments[4].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[4].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[4].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[4].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachments[4].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachments[4].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachments[4].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    // ==== ATTACHMENT REFERENCES ====
 
-    std::array<VkAttachmentReference, 4> colorReferences{};
-    colorReferences[0] = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    colorReferences[1] = {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    colorReferences[2] = {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    colorReferences[3] = {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    std::array<VkAttachmentReference, 3> colorAttachmentRefs{};
+    colorAttachmentRefs[0] = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};  // Normal
+    colorAttachmentRefs[1] = {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};  // Albedo
+    colorAttachmentRefs[2] = {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};  // Material
 
-    VkAttachmentReference depthReference = {4, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 3;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    // ==== SUBPASS ====
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = static_cast<uint32_t>(colorReferences.size());
-    subpass.pColorAttachments = colorReferences.data();
-    subpass.pDepthStencilAttachment = &depthReference;
+    subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
+    subpass.pColorAttachments = colorAttachmentRefs.data();
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    // ==== SUBPASS DEPENDENCIES ====
+
+    std::array<VkSubpassDependency, 2> dependencies{};
+
+    // Dependency 0: Before geometry pass
+    // Wait for any previous reads (from lighting pass) to finish
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[0].dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    // Dependency 1: After geometry pass
+    // Transition attachments for shader reads in lighting pass
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    // ==== CREATE RENDER PASS ====
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -439,8 +393,8 @@ void VulkanDeferredBase::createRenderPasses() {
     renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies = dependencies.data();
 
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &geometryRenderPass) != VK_SUCCESS) {
       throw std::runtime_error("failed to create geometry render pass!");
@@ -449,92 +403,12 @@ void VulkanDeferredBase::createRenderPasses() {
 
   // ==== LIGHTING RENDER PASS ====
   {
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapChainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &lightingRenderPass) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create lighting render pass!");
-    }
   }
 }
 
 // Framebuffers
 
-void VulkanDeferredBase::createFramebuffers() {
-  // Create geometry framebuffers
-  geometryFramebuffers.resize(swapChainImageViews.size());
-
-  for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-    std::array<VkImageView, 5> attachments = {gBuffer.position.imageView, gBuffer.normal.imageView, gBuffer.albedo.imageView,
-                                              gBuffer.material.imageView, depthBuffer.imageView};
-
-    VkFramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = geometryRenderPass;
-    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    framebufferInfo.pAttachments = attachments.data();
-    framebufferInfo.width = swapChainExtent.width;
-    framebufferInfo.height = swapChainExtent.height;
-    framebufferInfo.layers = 1;
-
-    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &geometryFramebuffers[i]) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create geometry framebuffer!");
-    }
-  }
-
-  // Create lighting framebuffers (for swap chain)
-  swapChainFramebuffers.resize(swapChainImageViews.size());
-
-  for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-    VkImageView attachments[] = {swapChainImageViews[i]};
-
-    VkFramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = lightingRenderPass;
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = attachments;
-    framebufferInfo.width = swapChainExtent.width;
-    framebufferInfo.height = swapChainExtent.height;
-    framebufferInfo.layers = 1;
-
-    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create swap chain framebuffer!");
-    }
-  }
-}
+void VulkanDeferredBase::createFramebuffers() {}
 
 // Initialization
 
@@ -562,7 +436,6 @@ void VulkanDeferredBase::initWindow() {
   // Get initial mouse position
   glfwGetCursorPos(window, &lastX, &lastY);
 }
-
 void VulkanDeferredBase::initVulkan() {
   // 1. Core Vulkan setup
   spdlog::info("Creating instance...");
@@ -618,7 +491,7 @@ void VulkanDeferredBase::initVulkan() {
   // 7. Create pipelines
   spdlog::info("Creating pipelines...");
   createGeometryPipeline();
-  createLightingPipeline();
+  // createLightingPipeline();
 
   // 8. Final setup
   spdlog::info("Creating framebuffers, command buffers, sync objects");
@@ -692,7 +565,7 @@ void VulkanDeferredBase::cleanup() {
 
   // Clean up render passes
   vkDestroyRenderPass(device, geometryRenderPass, nullptr);
-  vkDestroyRenderPass(device, lightingRenderPass, nullptr);
+  // vkDestroyRenderPass(device, lightingRenderPass, nullptr);
 
   // Clean up synchronization objects
   for (u32 i = 0; i < swapChainImages.size(); i++) {
@@ -959,7 +832,8 @@ void VulkanDeferredBase::createDepthResources() {
   }
 
   textureManager->InitTexture(depthBuffer, swapChainExtent.width, swapChainExtent.height, depthBuffer.format,
-                              VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                              VK_IMAGE_TILING_OPTIMAL,
+                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
   depthBuffer.imageView = textureManager->createImageView(depthBuffer.image, depthBuffer.format, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
@@ -1262,7 +1136,6 @@ void VulkanDeferredBase::keyCallback(GLFWwindow* window, int key, int scancode, 
 
 void VulkanDeferredBase::mouseCallback(GLFWwindow* window, double xpos, double ypos) {
   auto app = reinterpret_cast<VulkanDeferredBase*>(glfwGetWindowUserPointer(window));
-
   if (!app->mouseCaptured) {
     app->onMouseMove(xpos, ypos);
     return;
@@ -1305,4 +1178,36 @@ void VulkanDeferredBase::mouseButtonCallback(GLFWwindow* window, int button, int
     app->camera.setFov(45.0f);
   }
   app->onMouseButton(button, action, mods);
+}
+
+// Full-screen Quad Creation
+void VulkanDeferredBase::createFullscreenQuad() {
+  // Vertices for full-screen quad
+  struct QuadVertex {
+    glm::vec2 pos;
+    glm::vec2 uv;
+  };
+
+  std::vector<QuadVertex> vertices = {{{-1.0f, -1.0f}, {0.0f, 0.0f}},
+                                      {{1.0f, -1.0f}, {1.0f, 0.0f}},
+                                      {{1.0f, 1.0f}, {1.0f, 1.0f}},
+                                      {{-1.0f, 1.0f}, {0.0f, 1.0f}}};
+
+  std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
+
+  // Create vertex buffer
+  VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+  fullscreenQuad.vertexBuffer =
+      bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+  bufferManager->updateBuffer(fullscreenQuad.vertexBuffer, vertices.data(), bufferSize, 0);
+  // Create index buffer
+  VkDeviceSize IndexBufferSize = sizeof(indices[0]) * indices.size();
+  fullscreenQuad.indexBuffer =
+      bufferManager->createBuffer(IndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+
+  bufferManager->updateBuffer(fullscreenQuad.indexBuffer, indices.data(), IndexBufferSize, 0);
+
+  fullscreenQuad.indexCount = static_cast<uint32_t>(indices.size());
 }

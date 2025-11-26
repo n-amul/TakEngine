@@ -18,6 +18,7 @@
 #include "VulkanContext.hpp"
 #include "core/QuaternionCamera.hpp"
 #include "defines.hpp"
+#include "ui.hpp"
 
 class GLFWwindow;
 
@@ -26,7 +27,10 @@ struct SwapChainSupportDetails {
   std::vector<VkSurfaceFormatKHR> formats;
   std::vector<VkPresentModeKHR> presentModes;
 };
-
+/*
+  PASS 1: G-BUFFER (Geometry Pass) -> PASS 2: SSAO -> PASS 3: LIGHTING -> PASS 4: SKYBOX ->PASS 5: TRANSPARENT
+  -> PASS 6: POST-PROCESSING
+*/
 class TAK_API VulkanDeferredBase {
  public:
   virtual ~VulkanDeferredBase() = default;
@@ -34,11 +38,31 @@ class TAK_API VulkanDeferredBase {
 
  protected:
   // Pure virtual methods that derived classes must implement
-  virtual void createGeometryPipeline() = 0;
-  virtual void createLightingPipeline() = 0;
+  virtual void createGeometryPipeline() = 0;  // pass1
+  // virtual void createssaoPipeline() = 0;      // 2
+  // virtual void createLightingPipeline() = 0;  // 3
+  // virtual void createSkyboxPipeline() = 0;
+  // virtual void createTransparentPipeline() = 0;
+  // virtual void createPostProcessingPipelines() = 0;  // bloomPipeline,toneMappingPipeline,fxaaPipeline
+  // Core pipelines
+  VkPipeline gBufferPipeline;   // MRT output, depth write
+  VkPipeline lightingPipeline;  // Fullscreen, reads G-buffer + IBL
+  VkPipeline skyboxPipeline;    // Depth test ≤, no depth write
+
+  // Optional but common
+  VkPipeline ssaoPipeline;         // Fullscreen
+  VkPipeline ssaoBlurPipeline;     // Fullscreen
+  VkPipeline transparentPipeline;  // Forward, blending, depth read-only
+
+  // Post-processing
+  VkPipeline bloomDownsamplePipeline;
+  VkPipeline bloomUpsamplePipeline;
+  VkPipeline toneMappingPipeline;  // Includes gamma correction
+  VkPipeline fxaaPipeline;         // Or TAA
+
   virtual void loadResources() = 0;
   virtual void recordGeometryCommands(VkCommandBuffer commandBuffer) = 0;
-  virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
+  // virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
   virtual void cleanupResources() = 0;
 
   // Optional virtual methods
@@ -147,14 +171,12 @@ class TAK_API VulkanDeferredBase {
   u32 currentFrame = 0;
   bool framebufferResized = false;
 
-  TextureManager::Texture depthBuffer;
-
+  TextureManager::Texture depthBuffer;  //
   // G-Buffer components
   struct GBuffer {
-    TextureManager::Texture position;  // World position (RGB=position, A=unused)
-    TextureManager::Texture normal;    // World normal (RGB=normal, A=unused)
-    TextureManager::Texture albedo;    // Base color (RGB=albedo, A=unused)
-    TextureManager::Texture material;  // Material properties (R=metallic, G=roughness, B=AO, A=unused)
+    TextureManager::Texture normal;    // RGB=normal (encoded), A=metallic
+    TextureManager::Texture albedo;    // RGB=albedo, A=AO
+    TextureManager::Texture material;  // R=roughness, GBA=emissive
 
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
