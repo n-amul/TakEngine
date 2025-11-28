@@ -187,6 +187,7 @@ class TextureManager {
                                                                   VK_SAMPLER_ADDRESS_MODE_REPEAT,
                                                                   VK_SAMPLER_ADDRESS_MODE_REPEAT},
                                  float maxLod = 0.0f, float maxAnisotropy = 0.0f);
+  VkSampler createGBufferSampler();
   void InitTexture(Texture& texture, uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
                    VkImageUsageFlags usage, VkMemoryPropertyFlags properties, uint32_t mipLevels = 1,
                    VkSampleCountFlagBits numSamples = VK_SAMPLE_COUNT_1_BIT);

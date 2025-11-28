@@ -5,7 +5,9 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <random>
 #include <set>
 #include <stdexcept>
 
@@ -43,17 +45,7 @@ void VulkanDeferredBase::mainLoop() {
 
   vkDeviceWaitIdle(device);
 }
-/*
-vkWaitForFences          → CPU waits for previous frame's GPU work to complete
-         ↓
-vkAcquireNextImageKHR    → Get image index, semaphore signaled when image ready
-         ↓
-vkQueueSubmit            → GPU waits on imageAvailableSemaphore before COLOR_ATTACHMENT_OUTPUT
-                         → GPU signals renderFinishedSemaphore when done
-                         → GPU signals fence when done
-         ↓
-vkQueuePresentKHR        → Presentation waits on renderFinishedSemaphore
-*/
+
 void VulkanDeferredBase::drawFrame() {
   // Wait until the previous frame(same frame #) has finished, we are in host-cpu side
   vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
@@ -131,7 +123,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   VkRenderPassBeginInfo geometryPassInfo{};
   geometryPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   geometryPassInfo.renderPass = geometryRenderPass;
-  geometryPassInfo.framebuffer = geometryFramebuffers[imageIndex];
+  geometryPassInfo.framebuffer = gBuffer.geometryFramebuffers[imageIndex];
   geometryPassInfo.renderArea.offset = {0, 0};
   geometryPassInfo.renderArea.extent = swapChainExtent;
 
@@ -155,43 +147,62 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 }
 
+void VulkanDeferredBase::createDescriptorPool() {
+  // TODO: we need more pool size: uniform buffers and additional samplers for derived scenes, call derived functions to
+  // retrive sizes
+  //  Create descriptor pool
+  const u32 frameCount = static_cast<u32>(swapChainImages.size());
+  std::vector<VkDescriptorPoolSize> poolSizes = {
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4}};
+
+  VkDescriptorPoolCreateInfo poolInfo{};
+  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+  poolInfo.pPoolSizes = poolSizes.data();
+  poolInfo.maxSets = frameCount;
+
+  VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool));
+}
 // G-Buffer Creation
 void VulkanDeferredBase::createGBuffer() {
   // Formats for G-Buffer
   // normal: RGB=normal, A=metallic
   // albedo: RGB=albedo, A=AO
   // material: R=roughness, GBA=emissive (LDR emissive)
+  gBuffer.normal.resize(swapChainImages.size());
+  gBuffer.albedo.resize(swapChainImages.size());
+  gBuffer.material.resize(swapChainImages.size());
   static constexpr VkFormat GBUFFER_NORMAL_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
   static constexpr VkFormat GBUFFER_ALBEDO_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
   static constexpr VkFormat GBUFFER_MATERIAL_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
-  VkFormat DEPTH_FORMAT = depthBuffer.format;
+  VkFormat DEPTH_FORMAT = gBuffer.depthBuffer[0].format;
 
   // Create G-Buffer textures
-  textureManager->InitTexture(gBuffer.normal, swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT,
-                              VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  gBuffer.normal.imageView =
-      textureManager->createImageView(gBuffer.normal.image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-  gBuffer.normal.sampler = textureManager->createTextureSampler();
+  for (int i = 0; i < swapChainImages.size(); i++) {
+    textureManager->InitTexture(gBuffer.normal[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT,
+                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.normal[i].imageView =
+        textureManager->createImageView(gBuffer.normal[i].image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    gBuffer.normal[i].sampler = textureManager->createGBufferSampler();
 
-  textureManager->InitTexture(gBuffer.albedo, swapChainExtent.width, swapChainExtent.height, GBUFFER_ALBEDO_FORMAT,
-                              VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  gBuffer.albedo.imageView =
-      textureManager->createImageView(gBuffer.albedo.image, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-  gBuffer.albedo.sampler = textureManager->createTextureSampler();
+    textureManager->InitTexture(gBuffer.albedo[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_ALBEDO_FORMAT,
+                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.albedo[i].imageView =
+        textureManager->createImageView(gBuffer.albedo[i].image, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    gBuffer.albedo[i].sampler = textureManager->createGBufferSampler();
 
-  textureManager->InitTexture(gBuffer.material, swapChainExtent.width, swapChainExtent.height, GBUFFER_MATERIAL_FORMAT,
-                              VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  gBuffer.material.imageView =
-      textureManager->createImageView(gBuffer.material.image, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-  gBuffer.material.sampler = textureManager->createTextureSampler();
+    textureManager->InitTexture(gBuffer.material[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_MATERIAL_FORMAT,
+                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.material[i].imageView =
+        textureManager->createImageView(gBuffer.material[i].image, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    gBuffer.material[i].sampler = textureManager->createGBufferSampler();
+  }
 
   // NOTE: No manual layout transitions needed here
-  // The render pass will handle transitions:
-  //   UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL (geometry pass)
-  //   COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL (end of geometry pass)
+  // The render pass will handle transitions
 
   // Create descriptor set layout for G-Buffer (used in lighting pass)
   // Bindings: normal, albedo, material, depth
@@ -214,26 +225,11 @@ void VulkanDeferredBase::createGBuffer() {
     throw std::runtime_error("failed to create G-Buffer descriptor set layout!");
   }
 
-  // Create descriptor pool
-  VkDescriptorPoolSize poolSize{};
-  poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size() * 4);  // 4 textures per set
-
-  VkDescriptorPoolCreateInfo poolInfo{};
-  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.poolSizeCount = 1;
-  poolInfo.pPoolSizes = &poolSize;
-  poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
-
-  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &gBuffer.descriptorPool) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create G-Buffer descriptor pool!");
-  }
-
   // Allocate descriptor sets
   std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), gBuffer.descriptorSetLayout);
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = gBuffer.descriptorPool;
+  allocInfo.descriptorPool = descriptorPool;
   allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
   allocInfo.pSetLayouts = layouts.data();
 
@@ -248,23 +244,23 @@ void VulkanDeferredBase::createGBuffer() {
 
     // Binding 0: Normal + Metallic
     imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[0].imageView = gBuffer.normal.imageView;
-    imageInfos[0].sampler = gBuffer.normal.sampler;
+    imageInfos[0].imageView = gBuffer.normal[i].imageView;
+    imageInfos[0].sampler = gBuffer.normal[i].sampler;
 
     // Binding 1: Albedo + AO
     imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[1].imageView = gBuffer.albedo.imageView;
-    imageInfos[1].sampler = gBuffer.albedo.sampler;
+    imageInfos[1].imageView = gBuffer.albedo[i].imageView;
+    imageInfos[1].sampler = gBuffer.albedo[i].sampler;
 
     // Binding 2: Material (Roughness + Emissive)
     imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfos[2].imageView = gBuffer.material.imageView;
-    imageInfos[2].sampler = gBuffer.material.sampler;
+    imageInfos[2].imageView = gBuffer.material[i].imageView;
+    imageInfos[2].sampler = gBuffer.material[i].sampler;
 
     // Binding 3: Depth (for position reconstruction)
     imageInfos[3].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    imageInfos[3].imageView = depthBuffer.imageView;
-    imageInfos[3].sampler = depthBuffer.sampler;
+    imageInfos[3].imageView = gBuffer.depthBuffer[i].imageView;
+    imageInfos[3].sampler = gBuffer.depthBuffer[i].sampler;
 
     std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
     for (uint32_t j = 0; j < 4; j++) {
@@ -282,21 +278,21 @@ void VulkanDeferredBase::createGBuffer() {
 }
 
 void VulkanDeferredBase::cleanupGBuffer() {
-  vkDestroyDescriptorPool(device, gBuffer.descriptorPool, nullptr);
   vkDestroyDescriptorSetLayout(device, gBuffer.descriptorSetLayout, nullptr);
-
-  textureManager->destroyTexture(gBuffer.normal);
-  textureManager->destroyTexture(gBuffer.albedo);
-  textureManager->destroyTexture(gBuffer.material);
+  for (int i = 0; i < swapChainImages.size(); i++) {
+    textureManager->destroyTexture(gBuffer.normal[i]);
+    textureManager->destroyTexture(gBuffer.albedo[i]);
+    textureManager->destroyTexture(gBuffer.material[i]);
+    textureManager->destroyTexture(gBuffer.depthBuffer[i]);
+  }
 }
 // Render Passes
-
 void VulkanDeferredBase::createRenderPasses() {
   // ==== GEOMETRY RENDER PASS ====
   {
     // Attachment 0: Normal (world-space normals)
     VkAttachmentDescription normalAttachment{};
-    normalAttachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;  // GBUFFER_NORMAL_FORMAT
+    normalAttachment.format = gBuffer.normal[0].format;  // GBUFFER_NORMAL_FORMAT
     normalAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     normalAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     normalAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // Need to read in lighting pass
@@ -307,7 +303,7 @@ void VulkanDeferredBase::createRenderPasses() {
 
     // Attachment 1: Albedo (base color)
     VkAttachmentDescription albedoAttachment{};
-    albedoAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    albedoAttachment.format = gBuffer.albedo[0].format;
     albedoAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     albedoAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     albedoAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -318,7 +314,7 @@ void VulkanDeferredBase::createRenderPasses() {
 
     // Attachment 2: Material (roughness, metallic, ao, etc.)
     VkAttachmentDescription materialAttachment{};
-    materialAttachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    materialAttachment.format = gBuffer.material[0].format;
     materialAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     materialAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     materialAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -329,7 +325,7 @@ void VulkanDeferredBase::createRenderPasses() {
 
     // Attachment 3: Depth
     VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = depthBuffer.format;
+    depthAttachment.format = gBuffer.depthBuffer[0].format;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // May need depth in lighting pass
@@ -408,7 +404,53 @@ void VulkanDeferredBase::createRenderPasses() {
 
 // Framebuffers
 
-void VulkanDeferredBase::createFramebuffers() {}
+void VulkanDeferredBase::createFramebuffers() {
+  gBuffer.geometryFramebuffers.resize(swapChainImages.size());
+  swapChainFramebuffers.resize(swapChainImages.size());
+
+  // ==== GEOMETRY FRAMEBUFFERS ====
+  for (size_t i = 0; i < swapChainImages.size(); i++) {
+    // Order must match attachment order in geometry render pass
+    std::array<VkImageView, 4> attachments = {gBuffer.normal[i].imageView, gBuffer.albedo[i].imageView,
+                                              gBuffer.material[i].imageView, gBuffer.depthBuffer[i].imageView};
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = geometryRenderPass;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
+    framebufferInfo.width = swapChainExtent.width;
+    framebufferInfo.height = swapChainExtent.height;
+    framebufferInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &gBuffer.geometryFramebuffers[i]) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create geometry framebuffer!");
+    }
+  }
+
+  // ==== SWAPCHAIN FRAMEBUFFERS (for lighting pass - skip for now) ====
+  // Uncomment when you implement lighting pass
+  /*
+  for (size_t i = 0; i < swapChainImages.size(); i++) {
+    std::array<VkImageView, 1> attachments = {
+        swapChainImageViews[i]
+    };
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = lightingRenderPass;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
+    framebufferInfo.width = swapChainExtent.width;
+    framebufferInfo.height = swapChainExtent.height;
+    framebufferInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create swapchain framebuffer!");
+    }
+  }
+  */
+}
 
 // Initialization
 
@@ -479,6 +521,7 @@ void VulkanDeferredBase::initVulkan() {
   // 5. Rendering setup
   createSwapChain();
   createImageViews();
+  createDescriptorPool();
   createDepthResources();
   createGBuffer();
   createRenderPasses();
@@ -517,8 +560,6 @@ void VulkanDeferredBase::recreateSwapChain() {
   cleanupSwapChain();
   cleanupGBuffer();
 
-  depthBuffer = TextureManager::Texture();
-
   createSwapChain();
   createImageViews();
   createDepthResources();
@@ -527,7 +568,7 @@ void VulkanDeferredBase::recreateSwapChain() {
 }
 
 void VulkanDeferredBase::cleanupSwapChain() {
-  for (auto framebuffer : geometryFramebuffers) {
+  for (auto framebuffer : gBuffer.geometryFramebuffers) {
     vkDestroyFramebuffer(device, framebuffer, nullptr);
   }
 
@@ -556,10 +597,6 @@ void VulkanDeferredBase::cleanup() {
 
   // Clean up G-Buffer
   cleanupGBuffer();
-
-  // Clean up depth buffer
-  textureManager->destroyTexture(depthBuffer);
-
   // Clean up swap chain
   cleanupSwapChain();
 
@@ -826,16 +863,20 @@ void VulkanDeferredBase::createDepthResources() {
     return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
                                VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
   };
-
-  if (depthBuffer.format == VK_FORMAT_UNDEFINED) {
-    depthBuffer.format = findDepthFormat();
+  static VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+  if (depthFormat == VK_FORMAT_UNDEFINED) {
+    depthFormat = findDepthFormat();
   }
-
-  textureManager->InitTexture(depthBuffer, swapChainExtent.width, swapChainExtent.height, depthBuffer.format,
-                              VK_IMAGE_TILING_OPTIMAL,
-                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
-  depthBuffer.imageView = textureManager->createImageView(depthBuffer.image, depthBuffer.format, VK_IMAGE_ASPECT_DEPTH_BIT);
+  gBuffer.depthBuffer.resize(swapChainImages.size());
+  for (size_t i = 0; i < swapChainImages.size(); i++) {
+    textureManager->InitTexture(gBuffer.depthBuffer[i], swapChainExtent.width, swapChainExtent.height, depthFormat,
+                                VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
+    gBuffer.depthBuffer[i].imageView =
+        textureManager->createImageView(gBuffer.depthBuffer[i].image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+    gBuffer.depthBuffer[i].sampler = textureManager->createGBufferSampler();
+  }
 }
 
 SwapChainSupportDetails VulkanDeferredBase::querySwapChainSupport(VkPhysicalDevice device) {
@@ -1180,6 +1221,7 @@ void VulkanDeferredBase::mouseButtonCallback(GLFWwindow* window, int button, int
   app->onMouseButton(button, action, mods);
 }
 
+// calculations
 // Full-screen Quad Creation
 void VulkanDeferredBase::createFullscreenQuad() {
   // Vertices for full-screen quad
@@ -1210,4 +1252,36 @@ void VulkanDeferredBase::createFullscreenQuad() {
   bufferManager->updateBuffer(fullscreenQuad.indexBuffer, indices.data(), IndexBufferSize, 0);
 
   fullscreenQuad.indexCount = static_cast<uint32_t>(indices.size());
+}
+
+void VulkanDeferredBase::generateSSAOKernel() {
+  auto lerp = [](float a, float b, float f) -> float { return a + f * (b - a); };
+  std::default_random_engine rndEngine(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::uniform_real_distribution<float> rndDist(0.0f, 1.0f);
+
+  std::vector<glm::vec4> ssaoKernel(SsaoElements::SSAO_KERNEL_SIZE);
+
+  for (uint32_t i = 0; i < SsaoElements::SSAO_KERNEL_SIZE; ++i) {
+    // Random point in hemisphere (tangent space, z is up)
+    glm::vec3 sample(rndDist(rndEngine) * 2.0f - 1.0f,  // x: [-1, 1]
+                     rndDist(rndEngine) * 2.0f - 1.0f,  // y: [-1, 1]
+                     rndDist(rndEngine)                 // z: [0, 1] - hemisphere
+    );
+    sample = glm::normalize(sample);
+    sample *= rndDist(rndEngine);  // Random length
+
+    // Scale samples to cluster near origin (more samples close to surface)
+    float scale = static_cast<float>(i) / static_cast<float>(SsaoElements::SSAO_KERNEL_SIZE);
+    scale = lerp(0.1f, 1.0f, scale * scale);  // Quadratic falloff
+
+    ssaoKernel[i] = glm::vec4(sample * scale, 0.0f);
+  }
+
+  // Upload to UBO for each frame
+  for (size_t i = 0; i < swapChainImages.size(); i++) {
+    ssaoElements.ssaoKernelUBO[i] =
+        bufferManager->createBuffer(ssaoKernel.size() * sizeof(glm::vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    bufferManager->updateBuffer(ssaoElements.ssaoKernelUBO[i], ssaoKernel.data(), ssaoKernel.size() * sizeof(glm::vec4), 0);
+  }
 }

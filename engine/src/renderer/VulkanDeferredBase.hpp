@@ -29,7 +29,7 @@ struct SwapChainSupportDetails {
 };
 /*
   PASS 1: G-BUFFER (Geometry Pass) -> PASS 2: SSAO -> PASS 3: LIGHTING -> PASS 4: SKYBOX ->PASS 5: TRANSPARENT
-  -> PASS 6: POST-PROCESSING
+  -> PASS 6: POST-PROCESSING(bloom,toneMapping (HDR → LDR + gamma))
 */
 class TAK_API VulkanDeferredBase {
  public:
@@ -39,26 +39,64 @@ class TAK_API VulkanDeferredBase {
  protected:
   // Pure virtual methods that derived classes must implement
   virtual void createGeometryPipeline() = 0;  // pass1
-  // virtual void createssaoPipeline() = 0;      // 2
+  virtual void createssaoPipeline() = 0;      // 2
   // virtual void createLightingPipeline() = 0;  // 3
   // virtual void createSkyboxPipeline() = 0;
   // virtual void createTransparentPipeline() = 0;
-  // virtual void createPostProcessingPipelines() = 0;  // bloomPipeline,toneMappingPipeline,fxaaPipeline
-  // Core pipelines
-  VkPipeline gBufferPipeline;   // MRT output, depth write
-  VkPipeline lightingPipeline;  // Fullscreen, reads G-buffer + IBL
-  VkPipeline skyboxPipeline;    // Depth test ≤, no depth write
+  // virtual void createPostProcessingPipelines() = 0;  // bloomPipeline, toneMappingPipeline,fxaaPipeline
 
-  // Optional but common
-  VkPipeline ssaoPipeline;         // Fullscreen
-  VkPipeline ssaoBlurPipeline;     // Fullscreen
-  VkPipeline transparentPipeline;  // Forward, blending, depth read-only
+  // Data!!
+  std::vector<VkFramebuffer> swapChainFramebuffers;
+  // G-Buffer components
+  struct GBuffer {
+    // swapChainImageViews.size
+    std::vector<TextureManager::Texture> normal;    // RGB=normal (encoded), A=metallic
+    std::vector<TextureManager::Texture> albedo;    // RGB=albedo, A=AO
+    std::vector<TextureManager::Texture> material;  // R=roughness, GBA=emissive
+    std::vector<TextureManager::Texture> depthBuffer;
 
-  // Post-processing
-  VkPipeline bloomDownsamplePipeline;
-  VkPipeline bloomUpsamplePipeline;
-  VkPipeline toneMappingPipeline;  // Includes gamma correction
-  VkPipeline fxaaPipeline;         // Or TAA
+    VkDescriptorSetLayout descriptorSetLayout;
+    std::vector<VkDescriptorSet> descriptorSets;  // swapChainImageViews.size =~3
+
+    std::vector<VkFramebuffer> geometryFramebuffers;
+
+    VkPipeline gBufferPipeline;  // MRT output, depth write
+  } gBuffer;
+
+  struct SsaoElements {
+    static constexpr int SSAO_KERNEL_SIZE = 64;
+    static constexpr float SSAO_RADIUS = 0.3f;
+    static constexpr int SSAO_NOISE_DIM = 8;
+
+    // Textures
+    TextureManager::Texture noiseTexture;              // Random rotation vectors
+    std::vector<TextureManager::Texture> ssaoOutput;   // Raw SSAO result (per swapchain image)
+    std::vector<TextureManager::Texture> ssaoBlurred;  // Blurred result (per swapchain image)
+
+    // Framebuffers
+    std::vector<VkFramebuffer> ssaoFramebuffers;
+    std::vector<VkFramebuffer> ssaoBlurFramebuffers;
+
+    // Render passes
+    VkRenderPass ssaoRenderPass;
+    VkRenderPass ssaoBlurRenderPass;
+
+    // Uniform buffers
+    std::vector<BufferManager::Buffer> ssaoKernelUBO;  // Sample kernel
+    std::vector<BufferManager::Buffer> ssaoParamsUBO;  // Projection, etc.
+
+    // Pipeline layouts
+    VkPipelineLayout ssaoPipelineLayout;
+    VkPipelineLayout ssaoBlurPipelineLayout;
+
+    // Descriptor set layouts & sets
+    VkDescriptorSetLayout ssaoDescriptorSetLayout;
+    VkDescriptorSetLayout ssaoBlurDescriptorSetLayout;
+    std::vector<VkDescriptorSet> ssaoDescriptorSets;
+    std::vector<VkDescriptorSet> ssaoBlurDescriptorSets;
+  } ssaoElements;
+  void generateSSAOKernel();
+  void createSSAONoiseTexture();
 
   virtual void loadResources() = 0;
   virtual void recordGeometryCommands(VkCommandBuffer commandBuffer) = 0;
@@ -154,10 +192,6 @@ class TAK_API VulkanDeferredBase {
   VkRenderPass geometryRenderPass;
   VkRenderPass lightingRenderPass;
 
-  // Framebuffers
-  std::vector<VkFramebuffer> geometryFramebuffers;
-  std::vector<VkFramebuffer> swapChainFramebuffers;
-
   VkCommandPool commandPool;
   VkCommandPool transientCommandPool;
   std::vector<VkCommandBuffer> commandBuffers;
@@ -170,18 +204,9 @@ class TAK_API VulkanDeferredBase {
   const int MAX_FRAMES_IN_FLIGHT = 2;
   u32 currentFrame = 0;
   bool framebufferResized = false;
-
-  TextureManager::Texture depthBuffer;  //
-  // G-Buffer components
-  struct GBuffer {
-    TextureManager::Texture normal;    // RGB=normal (encoded), A=metallic
-    TextureManager::Texture albedo;    // RGB=albedo, A=AO
-    TextureManager::Texture material;  // R=roughness, GBA=emissive
-
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkDescriptorPool descriptorPool;
-    std::vector<VkDescriptorSet> descriptorSets;  // One per swap chain image
-  } gBuffer;
+  // single descriptor pool
+  VkDescriptorPool descriptorPool;
+  void createDescriptorPool();
 
   // Camera system
   QuaternionCamera camera;

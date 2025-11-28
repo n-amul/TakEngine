@@ -20,6 +20,4 @@ class TAK_API DeferredPBRIBLScene : public VulkanDeferredBase {
   void cleanupResource();
 
   void updateScene(float deltaTime);
-  // G-buffer core: albedo, normal, Metallic + Roughness depth
-  // additional: Emissive, Ambient Occlusion, Material ID(maybe)
 };

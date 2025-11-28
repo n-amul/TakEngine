@@ -1294,3 +1294,11 @@ void TextureManager::generateCubemapMipmaps(Texture& cubemap, VkCommandBuffer cm
 
   cubemap.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
+
+VkSampler TextureManager::createGBufferSampler() {
+  return createTextureSampler({VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                               VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE},
+                              0.0f,  // maxLod (no mipmaps)
+                              1.0f   // disable anisotropy
+  );
+}
