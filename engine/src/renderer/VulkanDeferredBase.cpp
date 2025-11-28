@@ -137,11 +137,45 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   geometryPassInfo.pClearValues = geometryClearValues.data();
 
   vkCmdBeginRenderPass(commandBuffer, &geometryPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
   // Record geometry pass commands from derived class
   recordGeometryCommands(commandBuffer);
-
   vkCmdEndRenderPass(commandBuffer);
+  // ==== SSAO PASS ====
+  VkRenderPassBeginInfo ssaoPassInfo{};
+  ssaoPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  ssaoPassInfo.renderPass = ssaoElements.ssaoRenderPass;
+  ssaoPassInfo.framebuffer = ssaoElements.ssaoFramebuffers[imageIndex];
+  ssaoPassInfo.renderArea.offset = {0, 0};
+  ssaoPassInfo.renderArea.extent = swapChainExtent;
+
+  VkClearValue ssaoClearValue{};
+  ssaoClearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};  // Clear to 0 occlusion
+
+  ssaoPassInfo.clearValueCount = 1;
+  ssaoPassInfo.pClearValues = &ssaoClearValue;
+
+  vkCmdBeginRenderPass(commandBuffer, &ssaoPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+  recordSSAOCommands(commandBuffer);
+  vkCmdEndRenderPass(commandBuffer);
+
+  // ==== SSAO BLUR PASS ====
+  VkRenderPassBeginInfo ssaoBlurPassInfo{};
+  ssaoBlurPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  ssaoBlurPassInfo.renderPass = ssaoElements.ssaoBlurRenderPass;
+  ssaoBlurPassInfo.framebuffer = ssaoElements.ssaoBlurFramebuffers[imageIndex];
+  ssaoBlurPassInfo.renderArea.offset = {0, 0};
+  ssaoBlurPassInfo.renderArea.extent = swapChainExtent;
+
+  VkClearValue ssaoBlurClearValue{};
+  ssaoBlurClearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};  // Clear to 0 occlusion
+
+  ssaoBlurPassInfo.clearValueCount = 1;
+  ssaoBlurPassInfo.pClearValues = &ssaoBlurClearValue;
+
+  vkCmdBeginRenderPass(commandBuffer, &ssaoBlurPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+  recordSSAOBlurCommands(commandBuffer);
+  vkCmdEndRenderPass(commandBuffer);
+
   // ==== LIGHTING PASS ====
 
   VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
@@ -153,13 +187,20 @@ void VulkanDeferredBase::createDescriptorPool() {
   //  Create descriptor pool
   const u32 frameCount = static_cast<u32>(swapChainImages.size());
   std::vector<VkDescriptorPoolSize> poolSizes = {
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4}};
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4},
+      // SSAO pass: depth + normal + noise + 2 UBOs per frame
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 3},  // depth, normal, noise
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount * 2},          // kernel, params
+      // SSAO Blur pass: 1 sampler per frame
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 1},
+      // Add more for lighting pass later...
+  };
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
   poolInfo.pPoolSizes = poolSizes.data();
-  poolInfo.maxSets = frameCount;
+  poolInfo.maxSets = frameCount * 4;
 
   VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool));
 }
@@ -286,6 +327,200 @@ void VulkanDeferredBase::cleanupGBuffer() {
     textureManager->destroyTexture(gBuffer.depthBuffer[i]);
   }
 }
+void VulkanDeferredBase::createSsaoElements() {
+  generateSSAOKernel();
+  createSSAONoiseTexture();
+  const uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+
+  // createSSAOTextures:
+  ssaoElements.ssaoOutput.resize(frameCount);
+  ssaoElements.ssaoBlurred.resize(frameCount);
+  for (size_t i = 0; i < frameCount; i++) {
+    // Raw SSAO output
+    textureManager->InitTexture(ssaoElements.ssaoOutput[i], swapChainExtent.width, swapChainExtent.height,
+                                VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ssaoElements.ssaoOutput[i].imageView =
+        textureManager->createImageView(ssaoElements.ssaoOutput[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    ssaoElements.ssaoOutput[i].sampler = textureManager->createGBufferSampler();
+
+    // Blurred SSAO output
+    textureManager->InitTexture(ssaoElements.ssaoBlurred[i], swapChainExtent.width, swapChainExtent.height,
+                                VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ssaoElements.ssaoBlurred[i].imageView =
+        textureManager->createImageView(ssaoElements.ssaoBlurred[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    ssaoElements.ssaoBlurred[i].sampler = textureManager->createGBufferSampler();
+  }
+  // ssao layout
+  {
+    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    // Binding 0: G-Buffer depth (for position reconstruction)
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 1: G-Buffer normals
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 2: Noise texture
+    bindings[2].binding = 2;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 3: SSAO kernel UBO
+    bindings[3].binding = 3;
+    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[3].descriptorCount = 1;
+    bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 4: SSAO params UBO (projection matrix, etc.)
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &ssaoElements.ssaoDescriptorSetLayout));
+  }
+  // blur layout
+  {  // SSAO Blur only needs the raw SSAO output to blur it
+    std::array<VkDescriptorSetLayoutBinding, 1> bindings{};
+
+    // Binding 0: Raw SSAO texture (from SSAO pass)
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[0].pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &ssaoElements.ssaoBlurDescriptorSetLayout));
+  }
+  // allocate descriptor sets
+  {
+    std::vector<VkDescriptorSetLayout> layouts(frameCount, ssaoElements.ssaoDescriptorSetLayout);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = frameCount;
+    allocInfo.pSetLayouts = layouts.data();
+
+    ssaoElements.ssaoDescriptorSets.resize(frameCount);
+    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, ssaoElements.ssaoDescriptorSets.data()));
+  }
+  {
+    std::vector<VkDescriptorSetLayout> layouts(frameCount, ssaoElements.ssaoBlurDescriptorSetLayout);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = frameCount;
+    allocInfo.pSetLayouts = layouts.data();
+
+    ssaoElements.ssaoBlurDescriptorSets.resize(frameCount);
+    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, ssaoElements.ssaoBlurDescriptorSets.data()));
+  }
+  for (size_t i = 0; i < frameCount; i++) {
+    {
+      std::array<VkDescriptorImageInfo, 3> imageInfos{};
+
+      // Binding 0: Depth buffer (for position reconstruction)
+      imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+      imageInfos[0].imageView = gBuffer.depthBuffer[i].imageView;
+      imageInfos[0].sampler = gBuffer.depthBuffer[i].sampler;
+
+      // Binding 1: Normal buffer
+      imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfos[1].imageView = gBuffer.normal[i].imageView;
+      imageInfos[1].sampler = gBuffer.normal[i].sampler;
+
+      // Binding 2: Noise texture (same for all frames)
+      imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfos[2].imageView = ssaoElements.noiseTexture.imageView;
+      imageInfos[2].sampler = ssaoElements.noiseTexture.sampler;
+
+      std::array<VkDescriptorBufferInfo, 2> bufferInfos{};
+
+      // Binding 3: SSAO Kernel UBO
+      bufferInfos[0].buffer = ssaoElements.ssaoKernelUBO[i].buffer;
+      bufferInfos[0].offset = 0;
+      bufferInfos[0].range = VK_WHOLE_SIZE;
+
+      // Binding 4: SSAO Params UBO
+      bufferInfos[1].buffer = ssaoElements.ssaoParamsUBO[i].buffer;
+      bufferInfos[1].offset = 0;
+      bufferInfos[1].range = VK_WHOLE_SIZE;
+
+      std::array<VkWriteDescriptorSet, 5> writes{};
+
+      // Image descriptors
+      for (uint32_t j = 0; j < 3; j++) {
+        writes[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[j].dstSet = ssaoElements.ssaoDescriptorSets[i];
+        writes[j].dstBinding = j;
+        writes[j].dstArrayElement = 0;
+        writes[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[j].descriptorCount = 1;
+        writes[j].pImageInfo = &imageInfos[j];
+      }
+
+      // Buffer descriptors
+      for (uint32_t j = 0; j < 2; j++) {
+        writes[3 + j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[3 + j].dstSet = ssaoElements.ssaoDescriptorSets[i];
+        writes[3 + j].dstBinding = 3 + j;
+        writes[3 + j].dstArrayElement = 0;
+        writes[3 + j].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[3 + j].descriptorCount = 1;
+        writes[3 + j].pBufferInfo = &bufferInfos[j];
+      }
+
+      vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    }
+
+    {
+      VkDescriptorImageInfo imageInfo{};
+      imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfo.imageView = ssaoElements.ssaoOutput[i].imageView;
+      imageInfo.sampler = ssaoElements.ssaoOutput[i].sampler;
+
+      VkWriteDescriptorSet write{};
+      write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write.dstSet = ssaoElements.ssaoBlurDescriptorSets[i];
+      write.dstBinding = 0;
+      write.dstArrayElement = 0;
+      write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      write.descriptorCount = 1;
+      write.pImageInfo = &imageInfo;
+
+      vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+  }
+  // createSSAOParamsUBO
+  ssaoElements.ssaoParamsUBO.resize(frameCount);
+  for (size_t i = 0; i < frameCount; i++) {
+    ssaoElements.ssaoParamsUBO[i] =
+        bufferManager->createBuffer(sizeof(SSAOParams), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+  }
+}
 // Render Passes
 void VulkanDeferredBase::createRenderPasses() {
   // ==== GEOMETRY RENDER PASS ====
@@ -396,7 +631,57 @@ void VulkanDeferredBase::createRenderPasses() {
       throw std::runtime_error("failed to create geometry render pass!");
     }
   }
+  // ==== SSAO RENDER PASS ====
+  {
+    // Single color attachment (R8 is enough for occlusion factor)
+    VkAttachmentDescription attachment{};
+    attachment.format = VK_FORMAT_R8_UNORM;
+    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+    VkAttachmentReference colorRef = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+
+    // Dependencies to ensure G-Buffer is ready
+    std::array<VkSubpassDependency, 2> dependencies{};
+
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &attachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies = dependencies.data();
+
+    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &ssaoElements.ssaoRenderPass));
+    // blur renderpass
+    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &ssaoElements.ssaoBlurRenderPass));
+  }
   // ==== LIGHTING RENDER PASS ====
   {
   }
@@ -425,6 +710,45 @@ void VulkanDeferredBase::createFramebuffers() {
 
     if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &gBuffer.geometryFramebuffers[i]) != VK_SUCCESS) {
       throw std::runtime_error("failed to create geometry framebuffer!");
+    }
+  }
+  // ==== SSAO FRAMEBUFFERS ====
+  const uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+
+  ssaoElements.ssaoFramebuffers.resize(frameCount);
+  ssaoElements.ssaoBlurFramebuffers.resize(frameCount);
+
+  for (size_t i = 0; i < frameCount; i++) {
+    // SSAO framebuffer
+    {
+      VkImageView attachment = ssaoElements.ssaoOutput[i].imageView;
+
+      VkFramebufferCreateInfo fbInfo{};
+      fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      fbInfo.renderPass = ssaoElements.ssaoRenderPass;
+      fbInfo.attachmentCount = 1;
+      fbInfo.pAttachments = &attachment;
+      fbInfo.width = swapChainExtent.width;
+      fbInfo.height = swapChainExtent.height;
+      fbInfo.layers = 1;
+
+      VK_CHECK_RESULT(vkCreateFramebuffer(device, &fbInfo, nullptr, &ssaoElements.ssaoFramebuffers[i]));
+    }
+
+    // SSAO Blur framebuffer
+    {
+      VkImageView attachment = ssaoElements.ssaoBlurred[i].imageView;
+
+      VkFramebufferCreateInfo fbInfo{};
+      fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      fbInfo.renderPass = ssaoElements.ssaoBlurRenderPass;
+      fbInfo.attachmentCount = 1;
+      fbInfo.pAttachments = &attachment;
+      fbInfo.width = swapChainExtent.width;
+      fbInfo.height = swapChainExtent.height;
+      fbInfo.layers = 1;
+
+      VK_CHECK_RESULT(vkCreateFramebuffer(device, &fbInfo, nullptr, &ssaoElements.ssaoBlurFramebuffers[i]));
     }
   }
 
@@ -524,6 +848,7 @@ void VulkanDeferredBase::initVulkan() {
   createDescriptorPool();
   createDepthResources();
   createGBuffer();
+  createSsaoElements();
   createRenderPasses();
   createFullscreenQuad();
 
@@ -1284,4 +1609,21 @@ void VulkanDeferredBase::generateSSAOKernel() {
                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     bufferManager->updateBuffer(ssaoElements.ssaoKernelUBO[i], ssaoKernel.data(), ssaoKernel.size() * sizeof(glm::vec4), 0);
   }
+}
+void VulkanDeferredBase::createSSAONoiseTexture() {
+  std::default_random_engine rndEngine(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::uniform_real_distribution<float> rndDist(0.0f, 1.0f);
+
+  const int noiseDim = SsaoElements::SSAO_NOISE_DIM;
+  std::vector<glm::vec4> noiseData(noiseDim * noiseDim);
+
+  for (uint32_t i = 0; i < noiseData.size(); i++) {
+    // Random rotation around Z axis (in tangent space)
+    noiseData[i] = glm::vec4(rndDist(rndEngine) * 2.0f - 1.0f, rndDist(rndEngine) * 2.0f - 1.0f,
+                             0.0f,  // Z = 0, rotation in XY plane
+                             0.0f);
+  }
+
+  ssaoElements.noiseTexture = textureManager->createTextureFromBuffer(
+      noiseData.data(), sizeof(glm::vec4) * noiseDim * noiseDim, VK_FORMAT_R32G32B32A32_SFLOAT, noiseDim, noiseDim, true);
 }

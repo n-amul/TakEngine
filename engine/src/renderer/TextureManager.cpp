@@ -538,7 +538,7 @@ std::vector<TextureManager::TextureSampler> TextureManager::loadTextureSamplers(
   return samplers;
 }
 TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint32_t size, VkFormat format, uint32_t width,
-                                                                uint32_t height) {
+                                                                uint32_t height, bool isNoise) {
   Texture texture;
   // Create staging buffer
   BufferManager::Buffer stagingBuffer = bufferManager->createStagingBuffer(size);
@@ -570,20 +570,29 @@ TextureManager::Texture TextureManager::createTextureFromBuffer(void* data, uint
   // Create image view
   texture.imageView = createImageView(texture.image, format);
 
-  // Create default sampler
+  //
   TextureSampler samplerInfo{};
-  samplerInfo.magFilter = VK_FILTER_LINEAR;
-  samplerInfo.minFilter = VK_FILTER_LINEAR;
-  samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // for fonts
-  samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  if (isNoise == false) {
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;  // for fonts
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  } else {
+    // can add mipmap support for noise
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;  //
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+  }
 
   texture.sampler = createTextureSampler(samplerInfo);
   // descriptor
   texture.descriptor.imageLayout = texture.currentLayout;
   texture.descriptor.imageView = texture.imageView;
   texture.descriptor.sampler = texture.sampler;
-
+  bufferManager->destroyBuffer(stagingBuffer);
   return texture;
 }
 // cube map

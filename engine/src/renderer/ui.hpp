@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "TextureManager.hpp"
-#include "VulkanBase.hpp"
 #include "core/utils.hpp"
 #include "defines.hpp"
 

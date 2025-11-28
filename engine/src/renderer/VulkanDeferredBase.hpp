@@ -27,6 +27,7 @@ struct SwapChainSupportDetails {
   std::vector<VkSurfaceFormatKHR> formats;
   std::vector<VkPresentModeKHR> presentModes;
 };
+
 /*
   PASS 1: G-BUFFER (Geometry Pass) -> PASS 2: SSAO -> PASS 3: LIGHTING -> PASS 4: SKYBOX ->PASS 5: TRANSPARENT
   -> PASS 6: POST-PROCESSING(bloom,toneMapping (HDR → LDR + gamma))
@@ -45,6 +46,13 @@ class TAK_API VulkanDeferredBase {
   // virtual void createTransparentPipeline() = 0;
   // virtual void createPostProcessingPipelines() = 0;  // bloomPipeline, toneMappingPipeline,fxaaPipeline
 
+  virtual void loadResources() = 0;
+  virtual void recordGeometryCommands(VkCommandBuffer commandBuffer) = 0;
+  virtual void recordSSAOCommands(VkCommandBuffer commandBuffer) = 0;
+  virtual void recordSSAOBlurCommands(VkCommandBuffer commandBuffer) = 0;
+  // virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
+  virtual void cleanupResources() = 0;
+
   // Data!!
   std::vector<VkFramebuffer> swapChainFramebuffers;
   // G-Buffer components
@@ -62,6 +70,8 @@ class TAK_API VulkanDeferredBase {
 
     VkPipeline gBufferPipeline;  // MRT output, depth write
   } gBuffer;
+  void createGBuffer();
+  void cleanupGBuffer();
 
   struct SsaoElements {
     static constexpr int SSAO_KERNEL_SIZE = 64;
@@ -97,11 +107,14 @@ class TAK_API VulkanDeferredBase {
   } ssaoElements;
   void generateSSAOKernel();
   void createSSAONoiseTexture();
-
-  virtual void loadResources() = 0;
-  virtual void recordGeometryCommands(VkCommandBuffer commandBuffer) = 0;
-  // virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
-  virtual void cleanupResources() = 0;
+  void createSsaoElements();
+  struct SSAOParams {
+    glm::mat4 projection;
+    float nearPlane;
+    float farPlane;
+    glm::vec2 noiseScale;  // screenSize / noiseTextureSize
+  };
+  // call updateSSAOParamsUBO() from derived::updatescene(deltaTime);
 
   // Optional virtual methods
   virtual void updateScene(float deltaTime) {}
@@ -154,10 +167,6 @@ class TAK_API VulkanDeferredBase {
 
   // Input handling
   void processInput(float deltaTime);
-
-  // Deferred rendering specific
-  void createGBuffer();
-  void cleanupGBuffer();
 
   // Protected members accessible to derived classes
   GLFWwindow* window = nullptr;
