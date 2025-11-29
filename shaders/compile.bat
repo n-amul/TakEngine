@@ -135,6 +135,44 @@ if errorlevel 1 (
     exit /b 1
 )
 
+"%GLSLC%" ./deferredShaders/deferred_geometry.vert -o "deferred_geometry.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile deferred_geometry.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/deferred_geometry.frag -o "deferred_geometry.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile deferred_geometry.frag
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/ssao.vert -o "ssao.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile ssao.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/ssao.frag -o "ssao.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile ssao.frag
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/ssao_blur.vert -o "ssao_blur.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile ssao_blur.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/ssao_blur.frag -o "ssao_blur.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile ssao_blur.frag
+    pause
+    exit /b 1
+)
+
+
 echo.
 echo ===================================
 echo All shaders compiled successfully!

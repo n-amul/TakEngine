@@ -39,6 +39,7 @@ class TAK_API VulkanDeferredBase {
 
  protected:
   // Pure virtual methods that derived classes must implement
+  virtual void getDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t& maxSets) = 0;
   virtual void createGeometryPipeline() = 0;  // pass1
   virtual void createssaoPipeline() = 0;      // 2
   // virtual void createLightingPipeline() = 0;  // 3
@@ -48,14 +49,16 @@ class TAK_API VulkanDeferredBase {
 
   virtual void loadResources() = 0;
   virtual void recordGeometryCommands(VkCommandBuffer commandBuffer) = 0;
-  virtual void recordSSAOCommands(VkCommandBuffer commandBuffer) = 0;
-  virtual void recordSSAOBlurCommands(VkCommandBuffer commandBuffer) = 0;
+  virtual void recordSSAOCommands(VkCommandBuffer commandBuffer, u32 imageIndex) = 0;
+  virtual void recordSSAOBlurCommands(VkCommandBuffer commandBuffer, u32 imageIndex) = 0;
   // virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
   virtual void cleanupResources() = 0;
 
   // Data!!
   std::vector<VkFramebuffer> swapChainFramebuffers;
   // G-Buffer components
+  // definition->depth resource create->Gbuffer Texture Create -> geometry render pass->framebuffer->geometrypipline create(derived)
+  // ->record geometry pass command->geometry commands from (derived) -> cleanup
   struct GBuffer {
     // swapChainImageViews.size
     std::vector<TextureManager::Texture> normal;    // RGB=normal (encoded), A=metallic
@@ -64,12 +67,13 @@ class TAK_API VulkanDeferredBase {
     std::vector<TextureManager::Texture> depthBuffer;
 
     VkDescriptorSetLayout descriptorSetLayout;
-    std::vector<VkDescriptorSet> descriptorSets;  // swapChainImageViews.size =~3
+    std::vector<VkDescriptorSet> descriptorSets;  // used for lighting pass not a descriptor for own
+    // derived class: gbufferubo, descriptorset, etc..
 
     std::vector<VkFramebuffer> geometryFramebuffers;
-
     VkPipeline gBufferPipeline;  // MRT output, depth write
   } gBuffer;
+
   void createGBuffer();
   void cleanupGBuffer();
 
@@ -93,7 +97,13 @@ class TAK_API VulkanDeferredBase {
 
     // Uniform buffers
     std::vector<BufferManager::Buffer> ssaoKernelUBO;  // Sample kernel
-    std::vector<BufferManager::Buffer> ssaoParamsUBO;  // Projection, etc.
+    struct SsaoParamsUBO {
+      glm::mat4 projection;
+      float nearPlane;
+      float farPlane;
+      glm::vec2 noiseScale;  // screenSize / noiseTextureSize
+    };
+    std::vector<BufferManager::Buffer> ssaoParamsUBO;
 
     // Pipeline layouts
     VkPipelineLayout ssaoPipelineLayout;
@@ -108,12 +118,7 @@ class TAK_API VulkanDeferredBase {
   void generateSSAOKernel();
   void createSSAONoiseTexture();
   void createSsaoElements();
-  struct SSAOParams {
-    glm::mat4 projection;
-    float nearPlane;
-    float farPlane;
-    glm::vec2 noiseScale;  // screenSize / noiseTextureSize
-  };
+
   // call updateSSAOParamsUBO() from derived::updatescene(deltaTime);
 
   // Optional virtual methods
@@ -254,10 +259,8 @@ class TAK_API VulkanDeferredBase {
   bool checkValidationLayerSupport();
 
   // Callbacks
-  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                      VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                                      void* pUserData);
+  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
   static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);

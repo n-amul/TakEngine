@@ -10,12 +10,13 @@ class DeferredTriangleScene : public VulkanDeferredBase {
 
  protected:
   // Required pure virtual implementations
+  void getDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t& maxSets);
   void createGeometryPipeline() override;
   void createssaoPipeline() override;
   void loadResources() override;
   void recordGeometryCommands(VkCommandBuffer commandBuffer) override;
-  void recordSSAOCommands(VkCommandBuffer commandBuffer) override {};
-  void recordSSAOBlurCommands(VkCommandBuffer commandBuffer) override {};
+  void recordSSAOCommands(VkCommandBuffer commandBuffer, u32 imageIndex) override;
+  void recordSSAOBlurCommands(VkCommandBuffer commandBuffer, u32 imageIndex) override;
   void cleanupResources() override;
 
   // Optional overrides
@@ -84,7 +85,6 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   VkPipelineLayout geometryPipelineLayout;
   VkDescriptorSetLayout geometryDescriptorSetLayout;
   std::vector<VkDescriptorSet> geometryDescriptorSets;
-  VkDescriptorPool descriptorPoolLocal;
 
   // SSAO pipeline resources
   VkPipeline ssaoPipeline;
@@ -114,7 +114,7 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   void createVertexBuffer();
   void createIndexBuffer();
   void createUniformBuffers();
-  void createDescriptorSetLayout();
+  void createDescriptorSetLayout();  // TODO: fix this to pass the pool size to parent class and make this to one
   void createDescriptorPool();
   void createDescriptorSets();
   void updateUniformBuffer(uint32_t currentImage);

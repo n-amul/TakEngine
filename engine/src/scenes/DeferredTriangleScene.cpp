@@ -19,7 +19,6 @@ void DeferredTriangleScene::loadResources() {
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
-  createDescriptorSetLayout();
   createDescriptorPool();
   createDescriptorSets();
 
@@ -38,13 +37,20 @@ void DeferredTriangleScene::loadResources() {
   ssaoBlurredTexId = ui->addTexture(ssaoElements.ssaoBlurred[0].sampler, ssaoElements.ssaoBlurred[0].imageView);
 }
 
+void DeferredTriangleScene::getDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t& maxSets) {
+  uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+
+  poolSizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount});
+  poolSizes.push_back({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount});
+  maxSets += frameCount;
+}
+
 void DeferredTriangleScene::createGeometryPipeline() {
   spdlog::info("Creating geometry pipeline");
 
   // Shader stages
-  VkPipelineShaderStageCreateInfo shaderStages[] = {
-      loadShader(std::string(SHADER_DIR) + "/deferred_geometry.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
-      loadShader(std::string(SHADER_DIR) + "/deferred_geometry.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+  VkPipelineShaderStageCreateInfo shaderStages[] = {loadShader(std::string(SHADER_DIR) + "/deferred_geometry.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+                                                    loadShader(std::string(SHADER_DIR) + "/deferred_geometry.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
   // Vertex input
   auto bindingDescription = Vertex::getBindingDescription();
@@ -98,8 +104,7 @@ void DeferredTriangleScene::createGeometryPipeline() {
   // Color blending - MRT setup for G-Buffer
   std::array<VkPipelineColorBlendAttachmentState, 3> colorBlendAttachments{};
   for (auto& attachment : colorBlendAttachments) {
-    attachment.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     attachment.blendEnable = VK_FALSE;
   }
 
@@ -239,9 +244,8 @@ void DeferredTriangleScene::createssaoPipeline() {
 
   VK_CHECK_RESULT(vkCreatePipelineLayout(device, &ssaoLayoutInfo, nullptr, &ssaoElements.ssaoPipelineLayout));
 
-  VkPipelineShaderStageCreateInfo ssaoShaders[] = {
-      loadShader(std::string(SHADER_DIR) + "/ssao.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
-      loadShader(std::string(SHADER_DIR) + "/ssao.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+  VkPipelineShaderStageCreateInfo ssaoShaders[] = {loadShader(std::string(SHADER_DIR) + "/ssao.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+                                                   loadShader(std::string(SHADER_DIR) + "/ssao.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
   VkGraphicsPipelineCreateInfo ssaoPipelineInfo{};
   ssaoPipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -271,9 +275,8 @@ void DeferredTriangleScene::createssaoPipeline() {
 
   VK_CHECK_RESULT(vkCreatePipelineLayout(device, &blurLayoutInfo, nullptr, &ssaoElements.ssaoBlurPipelineLayout));
 
-  VkPipelineShaderStageCreateInfo blurShaders[] = {
-      loadShader(std::string(SHADER_DIR) + "/ssao_blur.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
-      loadShader(std::string(SHADER_DIR) + "/ssao_blur.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+  VkPipelineShaderStageCreateInfo blurShaders[] = {loadShader(std::string(SHADER_DIR) + "/ssao_blur.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+                                                   loadShader(std::string(SHADER_DIR) + "/ssao_blur.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
   VkGraphicsPipelineCreateInfo blurPipelineInfo = ssaoPipelineInfo;
   blurPipelineInfo.pStages = blurShaders;
@@ -314,14 +317,10 @@ void DeferredTriangleScene::recordGeometryCommands(VkCommandBuffer commandBuffer
   vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
   // Bind descriptor sets
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, geometryPipelineLayout, 0, 1,
-                          &geometryDescriptorSets[currentFrame], 0, nullptr);
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, geometryPipelineLayout, 0, 1, &geometryDescriptorSets[currentFrame], 0, nullptr);
 
   // Draw
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-  // After geometry pass, render SSAO
-  // TODO: Add SSAO pass recording here
 }
 
 void DeferredTriangleScene::createVertexBuffer() {
@@ -339,41 +338,13 @@ void DeferredTriangleScene::createUniformBuffers() {
   uniformBuffers.resize(swapChainImages.size());
 
   for (size_t i = 0; i < swapChainImages.size(); i++) {
-    uniformBuffers[i] =
-        bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    uniformBuffers[i] = bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
 }
 
-void DeferredTriangleScene::createDescriptorSetLayout() {
-  // UBO binding
-  VkDescriptorSetLayoutBinding uboBinding{};
-  uboBinding.binding = 0;
-  uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboBinding.descriptorCount = 1;
-  uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  // Albedo texture binding
-  VkDescriptorSetLayoutBinding samplerBinding{};
-  samplerBinding.binding = 1;
-  samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerBinding.descriptorCount = 1;
-  samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboBinding, samplerBinding};
-
-  VkDescriptorSetLayoutCreateInfo layoutInfo{};
-  layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-  layoutInfo.pBindings = bindings.data();
-
-  VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &geometryDescriptorSetLayout));
-}
-
 void DeferredTriangleScene::createDescriptorPool() {
-  std::array<VkDescriptorPoolSize, 2> poolSizes = {
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(swapChainImages.size())},
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(swapChainImages.size())}};
+  std::array<VkDescriptorPoolSize, 2> poolSizes = {VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(swapChainImages.size())},
+                                                   VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(swapChainImages.size())}};
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -381,50 +352,78 @@ void DeferredTriangleScene::createDescriptorPool() {
   poolInfo.pPoolSizes = poolSizes.data();
   poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
-  VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPoolLocal));
+  VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool));
 }
 
 void DeferredTriangleScene::createDescriptorSets() {
-  std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), geometryDescriptorSetLayout);
+  //===========geometry============
+  {
+    // layout
+    //  UBO binding
+    VkDescriptorSetLayoutBinding uboBinding{};
+    uboBinding.binding = 0;
+    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboBinding.descriptorCount = 1;
+    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-  VkDescriptorSetAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = descriptorPoolLocal;
-  allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-  allocInfo.pSetLayouts = layouts.data();
+    // Albedo texture binding
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 1;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-  geometryDescriptorSets.resize(swapChainImages.size());
-  VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, geometryDescriptorSets.data()));
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboBinding, samplerBinding};
 
-  // Update descriptor sets
-  for (size_t i = 0; i < swapChainImages.size(); i++) {
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = uniformBuffers[i].buffer;
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(GeometryUBO);
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = albedoTexture.imageView;
-    imageInfo.sampler = albedoTexture.sampler;
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &geometryDescriptorSetLayout));
 
-    std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+    // geometry descriptor set
+    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), geometryDescriptorSetLayout);
 
-    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = geometryDescriptorSets[i];
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &bufferInfo;
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    allocInfo.pSetLayouts = layouts.data();
 
-    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = geometryDescriptorSets[i];
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &imageInfo;
+    geometryDescriptorSets.resize(swapChainImages.size());
+    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, geometryDescriptorSets.data()));
 
-    vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    // Update descriptor sets
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+      VkDescriptorBufferInfo bufferInfo{};
+      bufferInfo.buffer = uniformBuffers[i].buffer;
+      bufferInfo.offset = 0;
+      bufferInfo.range = sizeof(GeometryUBO);
+
+      VkDescriptorImageInfo imageInfo{};
+      imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfo.imageView = albedoTexture.imageView;
+      imageInfo.sampler = albedoTexture.sampler;
+
+      std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+      descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[0].dstSet = geometryDescriptorSets[i];
+      descriptorWrites[0].dstBinding = 0;
+      descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[0].descriptorCount = 1;
+      descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+      descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[1].dstSet = geometryDescriptorSets[i];
+      descriptorWrites[1].dstBinding = 1;
+      descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptorWrites[1].descriptorCount = 1;
+      descriptorWrites[1].pImageInfo = &imageInfo;
+
+      vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
   }
 }
 
@@ -440,13 +439,12 @@ void DeferredTriangleScene::updateUniformBuffer(uint32_t currentImage) {
 }
 
 void DeferredTriangleScene::updateSSAOParams(uint32_t currentImage) {
-  SSAOParams params{};
+  SsaoElements::SsaoParamsUBO params{};
   float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
   params.projection = camera.getProjectionMatrix(aspectRatio);
   params.nearPlane = 0.1f;
   params.farPlane = 100.0f;
-  params.noiseScale = glm::vec2(swapChainExtent.width / static_cast<float>(SsaoElements::SSAO_NOISE_DIM),
-                                swapChainExtent.height / static_cast<float>(SsaoElements::SSAO_NOISE_DIM));
+  params.noiseScale = glm::vec2(swapChainExtent.width / static_cast<float>(SsaoElements::SSAO_NOISE_DIM), swapChainExtent.height / static_cast<float>(SsaoElements::SSAO_NOISE_DIM));
 
   bufferManager->updateBuffer(ssaoElements.ssaoParamsUBO[currentImage], &params, sizeof(params), 0);
 }
@@ -517,9 +515,7 @@ void DeferredTriangleScene::updateOverlay(float deltaTime) {
   ui->updateBuffers();
 }
 
-void DeferredTriangleScene::onResize(int width, int height) {
-  spdlog::info("Deferred scene resized to {}x{}", width, height);
-}
+void DeferredTriangleScene::onResize(int width, int height) { spdlog::info("Deferred scene resized to {}x{}", width, height); }
 
 void DeferredTriangleScene::cleanupResources() {
   spdlog::info("Cleaning up deferred scene resources");
@@ -550,8 +546,71 @@ void DeferredTriangleScene::cleanupResources() {
   vkDestroyPipelineLayout(device, ssaoElements.ssaoBlurPipelineLayout, nullptr);
 
   // Clean up descriptor resources
-  vkDestroyDescriptorPool(device, descriptorPoolLocal, nullptr);
   vkDestroyDescriptorSetLayout(device, geometryDescriptorSetLayout, nullptr);
 
   spdlog::info("Deferred scene resources cleaned up");
+}
+
+void DeferredTriangleScene::recordSSAOCommands(VkCommandBuffer commandBuffer, u32 imageIndex) {
+  // Set viewport and scissor for full-screen pass
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(swapChainExtent.width);
+  viewport.height = static_cast<float>(swapChainExtent.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swapChainExtent;
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+  // Bind SSAO pipeline
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
+
+  // Bind SSAO descriptor sets (depth, normal, noise, kernel, params)
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoElements.ssaoPipelineLayout, 0, 1, &ssaoElements.ssaoDescriptorSets[imageIndex], 0, nullptr);
+
+  // Bind full-screen quad vertex buffer
+  VkBuffer vertexBuffers[] = {fullscreenQuad.vertexBuffer.buffer};
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+  vkCmdBindIndexBuffer(commandBuffer, fullscreenQuad.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+
+  // Draw full-screen quad
+  vkCmdDrawIndexed(commandBuffer, fullscreenQuad.indexCount, 1, 0, 0, 0);
+}
+
+void DeferredTriangleScene::recordSSAOBlurCommands(VkCommandBuffer commandBuffer, u32 imageIndex) {
+  // Set viewport and scissor for full-screen pass
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(swapChainExtent.width);
+  viewport.height = static_cast<float>(swapChainExtent.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swapChainExtent;
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+  // Bind SSAO blur pipeline
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
+
+  // Bind blur descriptor sets (raw SSAO texture)
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoElements.ssaoBlurPipelineLayout, 0, 1, &ssaoElements.ssaoBlurDescriptorSets[imageIndex], 0, nullptr);
+
+  // Bind full-screen quad vertex buffer
+  VkBuffer vertexBuffers[] = {fullscreenQuad.vertexBuffer.buffer};
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+  vkCmdBindIndexBuffer(commandBuffer, fullscreenQuad.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+
+  // Draw full-screen quad
+  vkCmdDrawIndexed(commandBuffer, fullscreenQuad.indexCount, 1, 0, 0, 0);
 }

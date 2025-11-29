@@ -52,8 +52,7 @@ void VulkanDeferredBase::drawFrame() {
 
   // Acquire image that are done displaying from swap chain
   uint32_t imageIndex;
-  VkResult res = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE,
-                                       &imageIndex);
+  VkResult res = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
   if (res == VK_ERROR_OUT_OF_DATE_KHR) {
     recreateSwapChain();
@@ -155,7 +154,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   ssaoPassInfo.pClearValues = &ssaoClearValue;
 
   vkCmdBeginRenderPass(commandBuffer, &ssaoPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-  recordSSAOCommands(commandBuffer);
+  recordSSAOCommands(commandBuffer, imageIndex);
   vkCmdEndRenderPass(commandBuffer);
 
   // ==== SSAO BLUR PASS ====
@@ -173,7 +172,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   ssaoBlurPassInfo.pClearValues = &ssaoBlurClearValue;
 
   vkCmdBeginRenderPass(commandBuffer, &ssaoBlurPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-  recordSSAOBlurCommands(commandBuffer);
+  recordSSAOBlurCommands(commandBuffer, imageIndex);
   vkCmdEndRenderPass(commandBuffer);
 
   // ==== LIGHTING PASS ====
@@ -182,25 +181,26 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
 }
 
 void VulkanDeferredBase::createDescriptorPool() {
-  // TODO: we need more pool size: uniform buffers and additional samplers for derived scenes, call derived functions to
-  // retrive sizes
   //  Create descriptor pool
   const u32 frameCount = static_cast<u32>(swapChainImages.size());
   std::vector<VkDescriptorPoolSize> poolSizes = {
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4},
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4},  // Gbuffer
       // SSAO pass: depth + normal + noise + 2 UBOs per frame
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 3},  // depth, normal, noise
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount * 2},          // kernel, params
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 3},  // ssao depth, normal, noise
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount * 2},          // ssao kernel, params
       // SSAO Blur pass: 1 sampler per frame
-      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 1},
-      // Add more for lighting pass later...
+      VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 1},  // ssao blur
+                                                                                        // Add more for lighting pass later...
   };
+  // retrive sizes
+  uint32_t maxSets = frameCount * 4;
+  getDescriptorPoolSizes(poolSizes, maxSets);
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
   poolInfo.pPoolSizes = poolSizes.data();
-  poolInfo.maxSets = frameCount * 4;
+  poolInfo.maxSets = maxSets;
 
   VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool));
 }
@@ -220,32 +220,25 @@ void VulkanDeferredBase::createGBuffer() {
 
   // Create G-Buffer textures
   for (int i = 0; i < swapChainImages.size(); i++) {
-    textureManager->InitTexture(gBuffer.normal[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT,
-                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    gBuffer.normal[i].imageView =
-        textureManager->createImageView(gBuffer.normal[i].image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    textureManager->InitTexture(gBuffer.normal[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.normal[i].imageView = textureManager->createImageView(gBuffer.normal[i].image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     gBuffer.normal[i].sampler = textureManager->createGBufferSampler();
 
-    textureManager->InitTexture(gBuffer.albedo[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_ALBEDO_FORMAT,
-                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    gBuffer.albedo[i].imageView =
-        textureManager->createImageView(gBuffer.albedo[i].image, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    textureManager->InitTexture(gBuffer.albedo[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.albedo[i].imageView = textureManager->createImageView(gBuffer.albedo[i].image, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     gBuffer.albedo[i].sampler = textureManager->createGBufferSampler();
 
-    textureManager->InitTexture(gBuffer.material[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_MATERIAL_FORMAT,
-                                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    gBuffer.material[i].imageView =
-        textureManager->createImageView(gBuffer.material[i].image, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    textureManager->InitTexture(gBuffer.material[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.material[i].imageView = textureManager->createImageView(gBuffer.material[i].image, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     gBuffer.material[i].sampler = textureManager->createGBufferSampler();
   }
 
   // NOTE: No manual layout transitions needed here
   // The render pass will handle transitions
-
-  // Create descriptor set layout for G-Buffer (used in lighting pass)
+  // Create descriptor set layout for G-Buffer "(used in lighting pass)"
   // Bindings: normal, albedo, material, depth
   std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
 
@@ -337,21 +330,15 @@ void VulkanDeferredBase::createSsaoElements() {
   ssaoElements.ssaoBlurred.resize(frameCount);
   for (size_t i = 0; i < frameCount; i++) {
     // Raw SSAO output
-    textureManager->InitTexture(ssaoElements.ssaoOutput[i], swapChainExtent.width, swapChainExtent.height,
-                                VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
-                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    ssaoElements.ssaoOutput[i].imageView =
-        textureManager->createImageView(ssaoElements.ssaoOutput[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    textureManager->InitTexture(ssaoElements.ssaoOutput[i], swapChainExtent.width, swapChainExtent.height, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ssaoElements.ssaoOutput[i].imageView = textureManager->createImageView(ssaoElements.ssaoOutput[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
     ssaoElements.ssaoOutput[i].sampler = textureManager->createGBufferSampler();
 
     // Blurred SSAO output
-    textureManager->InitTexture(ssaoElements.ssaoBlurred[i], swapChainExtent.width, swapChainExtent.height,
-                                VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
-                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    ssaoElements.ssaoBlurred[i].imageView =
-        textureManager->createImageView(ssaoElements.ssaoBlurred[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    textureManager->InitTexture(ssaoElements.ssaoBlurred[i], swapChainExtent.width, swapChainExtent.height, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ssaoElements.ssaoBlurred[i].imageView = textureManager->createImageView(ssaoElements.ssaoBlurred[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
     ssaoElements.ssaoBlurred[i].sampler = textureManager->createGBufferSampler();
   }
   // ssao layout
@@ -516,12 +503,11 @@ void VulkanDeferredBase::createSsaoElements() {
   // createSSAOParamsUBO
   ssaoElements.ssaoParamsUBO.resize(frameCount);
   for (size_t i = 0; i < frameCount; i++) {
-    ssaoElements.ssaoParamsUBO[i] =
-        bufferManager->createBuffer(sizeof(SSAOParams), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    ssaoElements.ssaoParamsUBO[i] = bufferManager->createBuffer(sizeof(SsaoElements::SsaoParamsUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
 }
-// Render Passes
+// Render Passes: how attachments are used: just description
 void VulkanDeferredBase::createRenderPasses() {
   // ==== GEOMETRY RENDER PASS ====
   {
@@ -569,8 +555,7 @@ void VulkanDeferredBase::createRenderPasses() {
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-    std::array<VkAttachmentDescription, 4> attachments = {normalAttachment, albedoAttachment, materialAttachment,
-                                                          depthAttachment};
+    std::array<VkAttachmentDescription, 4> attachments = {normalAttachment, albedoAttachment, materialAttachment, depthAttachment};
 
     // ==== ATTACHMENT REFERENCES ====
 
@@ -600,8 +585,7 @@ void VulkanDeferredBase::createRenderPasses() {
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencies[0].dstSubpass = 0;
     dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[0].dstStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -687,17 +671,18 @@ void VulkanDeferredBase::createRenderPasses() {
   }
 }
 
-// Framebuffers
-
+// Framebuffers: which actual images the render pass will write to.
 void VulkanDeferredBase::createFramebuffers() {
-  gBuffer.geometryFramebuffers.resize(swapChainImages.size());
-  swapChainFramebuffers.resize(swapChainImages.size());
+  const uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+  gBuffer.geometryFramebuffers.resize(frameCount);
+  swapChainFramebuffers.resize(frameCount);
+  ssaoElements.ssaoFramebuffers.resize(frameCount);
+  ssaoElements.ssaoBlurFramebuffers.resize(frameCount);
 
   // ==== GEOMETRY FRAMEBUFFERS ====
   for (size_t i = 0; i < swapChainImages.size(); i++) {
     // Order must match attachment order in geometry render pass
-    std::array<VkImageView, 4> attachments = {gBuffer.normal[i].imageView, gBuffer.albedo[i].imageView,
-                                              gBuffer.material[i].imageView, gBuffer.depthBuffer[i].imageView};
+    std::array<VkImageView, 4> attachments = {gBuffer.normal[i].imageView, gBuffer.albedo[i].imageView, gBuffer.material[i].imageView, gBuffer.depthBuffer[i].imageView};
 
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -713,10 +698,6 @@ void VulkanDeferredBase::createFramebuffers() {
     }
   }
   // ==== SSAO FRAMEBUFFERS ====
-  const uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
-
-  ssaoElements.ssaoFramebuffers.resize(frameCount);
-  ssaoElements.ssaoBlurFramebuffers.resize(frameCount);
 
   for (size_t i = 0; i < frameCount; i++) {
     // SSAO framebuffer
@@ -915,6 +896,12 @@ void VulkanDeferredBase::cleanup() {
 
   // Clean up derived class resources FIRST
   cleanupResources();
+
+  // destroy descriptor sets
+  vkDestroyDescriptorSetLayout(device, ssaoElements.ssaoDescriptorSetLayout, nullptr);
+  vkDestroyDescriptorSetLayout(device, ssaoElements.ssaoBlurDescriptorSetLayout, nullptr);
+  vkDestroyDescriptorSetLayout(device, gBuffer.descriptorSetLayout, nullptr);
+  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
   // Clean up fullscreen quad
   bufferManager->destroyBuffer(fullscreenQuad.vertexBuffer);
@@ -1163,15 +1150,13 @@ void VulkanDeferredBase::createImageViews() {
   swapChainImageViews.resize(swapChainImages.size());
 
   for (size_t i = 0; i < swapChainImages.size(); i++) {
-    swapChainImageViews[i] =
-        textureManager->createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+    swapChainImageViews[i] = textureManager->createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
   }
 }
 
 void VulkanDeferredBase::createDepthResources() {
   auto findDepthFormat = [this]() -> VkFormat {
-    auto findSupportedFormat = [this](const std::vector<VkFormat>& candidates, VkImageTiling tiling,
-                                      VkFormatFeatureFlags features) -> VkFormat {
+    auto findSupportedFormat = [this](const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) -> VkFormat {
       for (VkFormat format : candidates) {
         VkFormatProperties props;
         vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
@@ -1185,8 +1170,8 @@ void VulkanDeferredBase::createDepthResources() {
       throw std::runtime_error("Failed to find supported format");
     };
 
-    return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-                               VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}, VK_IMAGE_TILING_OPTIMAL,
+                               VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
   };
   static VkFormat depthFormat = VK_FORMAT_UNDEFINED;
   if (depthFormat == VK_FORMAT_UNDEFINED) {
@@ -1194,12 +1179,9 @@ void VulkanDeferredBase::createDepthResources() {
   }
   gBuffer.depthBuffer.resize(swapChainImages.size());
   for (size_t i = 0; i < swapChainImages.size(); i++) {
-    textureManager->InitTexture(gBuffer.depthBuffer[i], swapChainExtent.width, swapChainExtent.height, depthFormat,
-                                VK_IMAGE_TILING_OPTIMAL,
-                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
-    gBuffer.depthBuffer[i].imageView =
-        textureManager->createImageView(gBuffer.depthBuffer[i].image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+    textureManager->InitTexture(gBuffer.depthBuffer[i], swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
+    gBuffer.depthBuffer[i].imageView = textureManager->createImageView(gBuffer.depthBuffer[i].image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
     gBuffer.depthBuffer[i].sampler = textureManager->createGBufferSampler();
   }
 }
@@ -1230,8 +1212,7 @@ SwapChainSupportDetails VulkanDeferredBase::querySwapChainSupport(VkPhysicalDevi
 
 VkSurfaceFormatKHR VulkanDeferredBase::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
   for (const auto& availableFormat : availableFormats) {
-    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
-        availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
       return availableFormat;
     }
   }
@@ -1315,8 +1296,7 @@ void VulkanDeferredBase::createSyncObjects() {
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-        vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS || vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
       throw std::runtime_error("failed to create frame synchronization objects!");
     }
   }
@@ -1412,10 +1392,8 @@ std::vector<const char*> VulkanDeferredBase::getRequiredExtensions() {
   return extensions;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeferredBase::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                                 VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                                 const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                                                 void* pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeferredBase::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                                 const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
   switch (messageSeverity) {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
       spdlog::error("validation layer: {}", pCallbackData->pMessage);
@@ -1433,11 +1411,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeferredBase::debugCallback(VkDebugUtilsMes
 void VulkanDeferredBase::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
   createInfo = {};
   createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
   createInfo.pfnUserCallback = debugCallback;
 }
 
@@ -1555,24 +1530,19 @@ void VulkanDeferredBase::createFullscreenQuad() {
     glm::vec2 uv;
   };
 
-  std::vector<QuadVertex> vertices = {{{-1.0f, -1.0f}, {0.0f, 0.0f}},
-                                      {{1.0f, -1.0f}, {1.0f, 0.0f}},
-                                      {{1.0f, 1.0f}, {1.0f, 1.0f}},
-                                      {{-1.0f, 1.0f}, {0.0f, 1.0f}}};
+  std::vector<QuadVertex> vertices = {{{-1.0f, -1.0f}, {0.0f, 0.0f}}, {{1.0f, -1.0f}, {1.0f, 0.0f}}, {{1.0f, 1.0f}, {1.0f, 1.0f}}, {{-1.0f, 1.0f}, {0.0f, 1.0f}}};
 
   std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
 
   // Create vertex buffer
   VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
   fullscreenQuad.vertexBuffer =
-      bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+      bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   bufferManager->updateBuffer(fullscreenQuad.vertexBuffer, vertices.data(), bufferSize, 0);
   // Create index buffer
   VkDeviceSize IndexBufferSize = sizeof(indices[0]) * indices.size();
   fullscreenQuad.indexBuffer =
-      bufferManager->createBuffer(IndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+      bufferManager->createBuffer(IndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
 
   bufferManager->updateBuffer(fullscreenQuad.indexBuffer, indices.data(), IndexBufferSize, 0);
 
@@ -1604,9 +1574,8 @@ void VulkanDeferredBase::generateSSAOKernel() {
 
   // Upload to UBO for each frame
   for (size_t i = 0; i < swapChainImages.size(); i++) {
-    ssaoElements.ssaoKernelUBO[i] =
-        bufferManager->createBuffer(ssaoKernel.size() * sizeof(glm::vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+    ssaoElements.ssaoKernelUBO[i] = bufferManager->createBuffer(ssaoKernel.size() * sizeof(glm::vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     bufferManager->updateBuffer(ssaoElements.ssaoKernelUBO[i], ssaoKernel.data(), ssaoKernel.size() * sizeof(glm::vec4), 0);
   }
 }
@@ -1624,6 +1593,6 @@ void VulkanDeferredBase::createSSAONoiseTexture() {
                              0.0f);
   }
 
-  ssaoElements.noiseTexture = textureManager->createTextureFromBuffer(
-      noiseData.data(), sizeof(glm::vec4) * noiseDim * noiseDim, VK_FORMAT_R32G32B32A32_SFLOAT, noiseDim, noiseDim, true);
+  ssaoElements.noiseTexture =
+      textureManager->createTextureFromBuffer(noiseData.data(), sizeof(glm::vec4) * noiseDim * noiseDim, VK_FORMAT_R32G32B32A32_SFLOAT, noiseDim, noiseDim, true);
 }
