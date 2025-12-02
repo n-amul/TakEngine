@@ -114,8 +114,6 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   void createVertexBuffer();
   void createIndexBuffer();
   void createUniformBuffers();
-  void createDescriptorSetLayout();  // TODO: fix this to pass the pool size to parent class and make this to one
-  void createDescriptorPool();
   void createDescriptorSets();
   void updateUniformBuffer(uint32_t currentImage);
   void updateSSAOParams(uint32_t currentImage);

@@ -47,7 +47,7 @@ void main() {
     // Get G-Buffer data
     float depth = texture(depthTexture, fragTexCoord).r;
     
-    // Early exit for skybox/background
+    // Early exit for skybox
     if (depth >= 1.0) {
         outSSAO = 1.0;
         return;

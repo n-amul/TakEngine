@@ -122,7 +122,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   VkRenderPassBeginInfo geometryPassInfo{};
   geometryPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   geometryPassInfo.renderPass = geometryRenderPass;
-  geometryPassInfo.framebuffer = gBuffer.geometryFramebuffers[imageIndex];
+  geometryPassInfo.framebuffer = gBuffer.geometryFramebuffers[currentFrame];
   geometryPassInfo.renderArea.offset = {0, 0};
   geometryPassInfo.renderArea.extent = swapChainExtent;
 
@@ -143,7 +143,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   VkRenderPassBeginInfo ssaoPassInfo{};
   ssaoPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   ssaoPassInfo.renderPass = ssaoElements.ssaoRenderPass;
-  ssaoPassInfo.framebuffer = ssaoElements.ssaoFramebuffers[imageIndex];
+  ssaoPassInfo.framebuffer = ssaoElements.ssaoFramebuffers[currentFrame];
   ssaoPassInfo.renderArea.offset = {0, 0};
   ssaoPassInfo.renderArea.extent = swapChainExtent;
 
@@ -210,16 +210,16 @@ void VulkanDeferredBase::createGBuffer() {
   // normal: RGB=normal, A=metallic
   // albedo: RGB=albedo, A=AO
   // material: R=roughness, GBA=emissive (LDR emissive)
-  gBuffer.normal.resize(swapChainImages.size());
-  gBuffer.albedo.resize(swapChainImages.size());
-  gBuffer.material.resize(swapChainImages.size());
+  gBuffer.normal.resize(MAX_FRAMES_IN_FLIGHT);
+  gBuffer.albedo.resize(MAX_FRAMES_IN_FLIGHT);
+  gBuffer.material.resize(MAX_FRAMES_IN_FLIGHT);
   static constexpr VkFormat GBUFFER_NORMAL_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
   static constexpr VkFormat GBUFFER_ALBEDO_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
   static constexpr VkFormat GBUFFER_MATERIAL_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
   VkFormat DEPTH_FORMAT = gBuffer.depthBuffer[0].format;
 
   // Create G-Buffer textures
-  for (int i = 0; i < swapChainImages.size(); i++) {
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     textureManager->InitTexture(gBuffer.normal[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT, VK_IMAGE_TILING_OPTIMAL,
                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     gBuffer.normal[i].imageView = textureManager->createImageView(gBuffer.normal[i].image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -260,20 +260,20 @@ void VulkanDeferredBase::createGBuffer() {
   }
 
   // Allocate descriptor sets
-  std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), gBuffer.descriptorSetLayout);
+  std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, gBuffer.descriptorSetLayout);
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   allocInfo.descriptorPool = descriptorPool;
-  allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+  allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
   allocInfo.pSetLayouts = layouts.data();
 
-  gBuffer.descriptorSets.resize(swapChainImages.size());
+  gBuffer.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
   if (vkAllocateDescriptorSets(device, &allocInfo, gBuffer.descriptorSets.data()) != VK_SUCCESS) {
     throw std::runtime_error("failed to allocate G-Buffer descriptor sets!");
   }
 
   // Update descriptor sets
-  for (size_t i = 0; i < swapChainImages.size(); i++) {
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     std::array<VkDescriptorImageInfo, 4> imageInfos{};
 
     // Binding 0: Normal + Metallic
@@ -313,7 +313,7 @@ void VulkanDeferredBase::createGBuffer() {
 
 void VulkanDeferredBase::cleanupGBuffer() {
   vkDestroyDescriptorSetLayout(device, gBuffer.descriptorSetLayout, nullptr);
-  for (int i = 0; i < swapChainImages.size(); i++) {
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     textureManager->destroyTexture(gBuffer.normal[i]);
     textureManager->destroyTexture(gBuffer.albedo[i]);
     textureManager->destroyTexture(gBuffer.material[i]);
@@ -323,7 +323,7 @@ void VulkanDeferredBase::cleanupGBuffer() {
 void VulkanDeferredBase::createSsaoElements() {
   generateSSAOKernel();
   createSSAONoiseTexture();
-  const uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+  const uint32_t frameCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
   // createSSAOTextures:
   ssaoElements.ssaoOutput.resize(frameCount);
@@ -673,14 +673,14 @@ void VulkanDeferredBase::createRenderPasses() {
 
 // Framebuffers: which actual images the render pass will write to.
 void VulkanDeferredBase::createFramebuffers() {
-  const uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+  const uint32_t frameCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
   gBuffer.geometryFramebuffers.resize(frameCount);
   swapChainFramebuffers.resize(frameCount);
   ssaoElements.ssaoFramebuffers.resize(frameCount);
   ssaoElements.ssaoBlurFramebuffers.resize(frameCount);
 
   // ==== GEOMETRY FRAMEBUFFERS ====
-  for (size_t i = 0; i < swapChainImages.size(); i++) {
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     // Order must match attachment order in geometry render pass
     std::array<VkImageView, 4> attachments = {gBuffer.normal[i].imageView, gBuffer.albedo[i].imageView, gBuffer.material[i].imageView, gBuffer.depthBuffer[i].imageView};
 
@@ -693,9 +693,7 @@ void VulkanDeferredBase::createFramebuffers() {
     framebufferInfo.height = swapChainExtent.height;
     framebufferInfo.layers = 1;
 
-    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &gBuffer.geometryFramebuffers[i]) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create geometry framebuffer!");
-    }
+    VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &gBuffer.geometryFramebuffers[i]));
   }
   // ==== SSAO FRAMEBUFFERS ====
 
@@ -1177,8 +1175,8 @@ void VulkanDeferredBase::createDepthResources() {
   if (depthFormat == VK_FORMAT_UNDEFINED) {
     depthFormat = findDepthFormat();
   }
-  gBuffer.depthBuffer.resize(swapChainImages.size());
-  for (size_t i = 0; i < swapChainImages.size(); i++) {
+  gBuffer.depthBuffer.resize(MAX_FRAMES_IN_FLIGHT);
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     textureManager->InitTexture(gBuffer.depthBuffer[i], swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
                                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, VK_SAMPLE_COUNT_1_BIT);
     gBuffer.depthBuffer[i].imageView = textureManager->createImageView(gBuffer.depthBuffer[i].image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);

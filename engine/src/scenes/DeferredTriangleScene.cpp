@@ -19,7 +19,6 @@ void DeferredTriangleScene::loadResources() {
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
-  createDescriptorPool();
   createDescriptorSets();
 
   // Load textures
@@ -342,19 +341,6 @@ void DeferredTriangleScene::createUniformBuffers() {
   }
 }
 
-void DeferredTriangleScene::createDescriptorPool() {
-  std::array<VkDescriptorPoolSize, 2> poolSizes = {VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(swapChainImages.size())},
-                                                   VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(swapChainImages.size())}};
-
-  VkDescriptorPoolCreateInfo poolInfo{};
-  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-  poolInfo.pPoolSizes = poolSizes.data();
-  poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
-
-  VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool));
-}
-
 void DeferredTriangleScene::createDescriptorSets() {
   //===========geometry============
   {
@@ -388,14 +374,14 @@ void DeferredTriangleScene::createDescriptorSets() {
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     allocInfo.pSetLayouts = layouts.data();
 
-    geometryDescriptorSets.resize(swapChainImages.size());
+    geometryDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
     VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, geometryDescriptorSets.data()));
 
     // Update descriptor sets
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       VkDescriptorBufferInfo bufferInfo{};
       bufferInfo.buffer = uniformBuffers[i].buffer;
       bufferInfo.offset = 0;
@@ -451,7 +437,7 @@ void DeferredTriangleScene::updateSSAOParams(uint32_t currentImage) {
 
 void DeferredTriangleScene::updateScene(float deltaTime) {
   updateOverlay(deltaTime);
-  updateUniformBuffer(currentFrame);
+  updateUniformBuffer(currentFrame);  // TODO: use image index instead
   updateSSAOParams(currentFrame);
 }
 
@@ -571,7 +557,7 @@ void DeferredTriangleScene::recordSSAOCommands(VkCommandBuffer commandBuffer, u3
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoPipeline);
 
   // Bind SSAO descriptor sets (depth, normal, noise, kernel, params)
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoElements.ssaoPipelineLayout, 0, 1, &ssaoElements.ssaoDescriptorSets[imageIndex], 0, nullptr);
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoElements.ssaoPipelineLayout, 0, 1, &ssaoElements.ssaoDescriptorSets[currentFrame], 0, nullptr);
 
   // Bind full-screen quad vertex buffer
   VkBuffer vertexBuffers[] = {fullscreenQuad.vertexBuffer.buffer};

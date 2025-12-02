@@ -55,6 +55,7 @@ class TAK_API VulkanDeferredBase {
   virtual void cleanupResources() = 0;
 
   // Data!!
+  // TODO!! make all these buffers size MAX_FRAME_IN_FLIGHT
   std::vector<VkFramebuffer> swapChainFramebuffers;
   // G-Buffer components
   // definition->depth resource create->Gbuffer Texture Create -> geometry render pass->framebuffer->geometrypipline create(derived)
