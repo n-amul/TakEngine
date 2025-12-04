@@ -161,7 +161,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   VkRenderPassBeginInfo ssaoBlurPassInfo{};
   ssaoBlurPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   ssaoBlurPassInfo.renderPass = ssaoElements.ssaoBlurRenderPass;
-  ssaoBlurPassInfo.framebuffer = ssaoElements.ssaoBlurFramebuffers[imageIndex];
+  ssaoBlurPassInfo.framebuffer = ssaoElements.ssaoBlurFramebuffers[currentFrame];
   ssaoBlurPassInfo.renderArea.offset = {0, 0};
   ssaoBlurPassInfo.renderArea.extent = swapChainExtent;
 
@@ -324,6 +324,12 @@ void VulkanDeferredBase::createSsaoElements() {
   generateSSAOKernel();
   createSSAONoiseTexture();
   const uint32_t frameCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+  // createSSAOParamsUBO
+  ssaoElements.ssaoParamsUBO.resize(frameCount);
+  for (size_t i = 0; i < frameCount; i++) {
+    ssaoElements.ssaoParamsUBO[i] = bufferManager->createBuffer(sizeof(SsaoElements::SsaoParamsUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+  }
 
   // createSSAOTextures:
   ssaoElements.ssaoOutput.resize(frameCount);
@@ -499,12 +505,6 @@ void VulkanDeferredBase::createSsaoElements() {
 
       vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
     }
-  }
-  // createSSAOParamsUBO
-  ssaoElements.ssaoParamsUBO.resize(frameCount);
-  for (size_t i = 0; i < frameCount; i++) {
-    ssaoElements.ssaoParamsUBO[i] = bufferManager->createBuffer(sizeof(SsaoElements::SsaoParamsUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
 }
 // Render Passes: how attachments are used: just description
@@ -825,6 +825,7 @@ void VulkanDeferredBase::initVulkan() {
   createSwapChain();
   createImageViews();
   createDescriptorPool();
+
   createDepthResources();
   createGBuffer();
   createSsaoElements();
@@ -1571,7 +1572,8 @@ void VulkanDeferredBase::generateSSAOKernel() {
   }
 
   // Upload to UBO for each frame
-  for (size_t i = 0; i < swapChainImages.size(); i++) {
+  ssaoElements.ssaoKernelUBO.resize(MAX_FRAMES_IN_FLIGHT);
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     ssaoElements.ssaoKernelUBO[i] = bufferManager->createBuffer(ssaoKernel.size() * sizeof(glm::vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
     bufferManager->updateBuffer(ssaoElements.ssaoKernelUBO[i], ssaoKernel.data(), ssaoKernel.size() * sizeof(glm::vec4), 0);

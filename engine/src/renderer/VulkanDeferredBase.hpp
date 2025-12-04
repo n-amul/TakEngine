@@ -77,7 +77,8 @@ class TAK_API VulkanDeferredBase {
 
   void createGBuffer();
   void cleanupGBuffer();
-
+  // Definition ->  Kernel Generation-> Noise Texture Creation ->createSsaoElements()->Render Passes-> Framebuffers
+  //->Pipeline Creation (Derived Class)->Runtime Update->Command Buffer Recording->SSAO Draw Commands (Derived Class)->cleanup
   struct SsaoElements {
     static constexpr int SSAO_KERNEL_SIZE = 64;
     static constexpr float SSAO_RADIUS = 0.3f;
