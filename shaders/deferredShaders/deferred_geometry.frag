@@ -1,12 +1,12 @@
 #version 450
 
-// Inputs from vertex shader
-layout(location = 0) in vec3 fragNormal;
+// Inputs from vertex shader (VIEW SPACE)
+layout(location = 0) in vec3 fragNormalView;
 layout(location = 1) in vec2 fragTexCoord;
-layout(location = 2) in vec3 fragWorldPos;
+layout(location = 2) in vec3 fragPosView;
 
 // Texture sampler
-layout(binding = 1) uniform sampler2D albedoSampler;
+layout(set = 0, binding = 1) uniform sampler2D albedoSampler;
 
 // G-Buffer outputs (MRT)
 layout(location = 0) out vec4 outNormal;    // RGB=normal, A=metallic
@@ -17,9 +17,8 @@ void main() {
     // Sample albedo texture
     vec3 albedo = texture(albedoSampler, fragTexCoord).rgb;
     
-    // Normalize and encode normal to [0,1] range
-    vec3 N = normalize(fragNormal);
-    vec3 encodedNormal = N * 0.5 + 0.5;
+    // Normalize view-space normal (NO encoding - SFLOAT stores [-1,1] directly)
+    vec3 N = normalize(fragNormalView);
     
     // Material properties (hardcoded for demo, you can make these uniforms)
     float metallic = 0.0;
@@ -28,7 +27,7 @@ void main() {
     vec3 emissive = vec3(0.0);
     
     // Write to G-Buffer
-    outNormal = vec4(encodedNormal, metallic);
+    outNormal = vec4(N, metallic);
     outAlbedo = vec4(albedo, ao);
     outMaterial = vec4(roughness, emissive);
 }

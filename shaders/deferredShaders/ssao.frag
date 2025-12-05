@@ -1,6 +1,7 @@
 #version 450
 
 layout(location = 0) in vec2 fragTexCoord;
+layout(location = 0) out float outSSAO;
 
 // G-Buffer inputs
 layout(binding = 0) uniform sampler2D depthTexture;
@@ -20,28 +21,21 @@ layout(binding = 4) uniform SSAOParams {
     vec2 noiseScale;
 } params;
 
-layout(location = 0) out float outSSAO;
 
 const int KERNEL_SIZE = 64;
 const float RADIUS = 0.3;
 const float BIAS = 0.025;
 
-// Convert depth to view space position
-vec3 depthToViewPos(vec2 texCoord, float depth) {
-    // Convert to NDC
-    vec4 ndc = vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+// Reconstruct view-space position from depth
+vec3 reconstructViewPos(vec2 uv, float depth) {
+    // Convert UV [0,1] to NDC [-1,1]
+    vec2 ndc = uv * 2.0 - 1.0;
+    vec4 clipPos = vec4(ndc, depth, 1.0);  // ✅ Use the parameter
+    vec4 viewPos = inverse(params.projection) * clipPos;
     
-    // Inverse projection to view space
-    vec4 viewPos = inverse(params.projection) * ndc;
     return viewPos.xyz / viewPos.w;
 }
 
-// Linearize depth
-float linearizeDepth(float depth) {
-    float z = depth * 2.0 - 1.0;
-    return (2.0 * params.nearPlane * params.farPlane) / 
-           (params.farPlane + params.nearPlane - z * (params.farPlane - params.nearPlane));
-}
 
 void main() {
     // Get G-Buffer data
@@ -53,10 +47,9 @@ void main() {
         return;
     }
     
-    vec3 normal = texture(normalTexture, fragTexCoord).rgb;
-    normal = normalize(normal * 2.0 - 1.0); // Decode from [0,1] to [-1,1]
-    
-    vec3 fragPos = depthToViewPos(fragTexCoord, depth);
+    vec3 normal = normalize(texture(normalTexture, fragTexCoord).rgb);
+    vec3 fragPos = reconstructViewPos(fragTexCoord, depth);
+
     
     // Get noise vector
     vec3 randomVec = texture(noiseTexture, fragTexCoord * params.noiseScale).xyz;

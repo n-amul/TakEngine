@@ -182,7 +182,7 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
 
 void VulkanDeferredBase::createDescriptorPool() {
   //  Create descriptor pool
-  const u32 frameCount = static_cast<u32>(swapChainImages.size());
+  const u32 frameCount = static_cast<u32>(MAX_FRAMES_IN_FLIGHT);
   std::vector<VkDescriptorPoolSize> poolSizes = {
       VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4},  // Gbuffer
       // SSAO pass: depth + normal + noise + 2 UBOs per frame
@@ -213,9 +213,9 @@ void VulkanDeferredBase::createGBuffer() {
   gBuffer.normal.resize(MAX_FRAMES_IN_FLIGHT);
   gBuffer.albedo.resize(MAX_FRAMES_IN_FLIGHT);
   gBuffer.material.resize(MAX_FRAMES_IN_FLIGHT);
-  static constexpr VkFormat GBUFFER_NORMAL_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
-  static constexpr VkFormat GBUFFER_ALBEDO_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
-  static constexpr VkFormat GBUFFER_MATERIAL_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+  VkFormat GBUFFER_NORMAL_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
+  VkFormat GBUFFER_ALBEDO_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+  VkFormat GBUFFER_MATERIAL_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
   VkFormat DEPTH_FORMAT = gBuffer.depthBuffer[0].format;
 
   // Create G-Buffer textures
@@ -311,13 +311,48 @@ void VulkanDeferredBase::createGBuffer() {
   }
 }
 
-void VulkanDeferredBase::cleanupGBuffer() {
-  vkDestroyDescriptorSetLayout(device, gBuffer.descriptorSetLayout, nullptr);
+void VulkanDeferredBase::recreateGbuffer() {
+  static constexpr VkFormat GBUFFER_NORMAL_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
+  static constexpr VkFormat GBUFFER_ALBEDO_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+  static constexpr VkFormat GBUFFER_MATERIAL_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+  VkFormat DEPTH_FORMAT = gBuffer.depthBuffer[0].format;
+
+  // Create G-Buffer textures
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    textureManager->destroyTexture(gBuffer.normal[i]);
-    textureManager->destroyTexture(gBuffer.albedo[i]);
-    textureManager->destroyTexture(gBuffer.material[i]);
-    textureManager->destroyTexture(gBuffer.depthBuffer[i]);
+    textureManager->InitTexture(gBuffer.normal[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_NORMAL_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.normal[i].imageView = textureManager->createImageView(gBuffer.normal[i].image, GBUFFER_NORMAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    gBuffer.normal[i].sampler = textureManager->createGBufferSampler();
+
+    textureManager->InitTexture(gBuffer.albedo[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.albedo[i].imageView = textureManager->createImageView(gBuffer.albedo[i].image, GBUFFER_ALBEDO_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    gBuffer.albedo[i].sampler = textureManager->createGBufferSampler();
+
+    textureManager->InitTexture(gBuffer.material[i], swapChainExtent.width, swapChainExtent.height, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    gBuffer.material[i].imageView = textureManager->createImageView(gBuffer.material[i].image, GBUFFER_MATERIAL_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    gBuffer.material[i].sampler = textureManager->createGBufferSampler();
+  }
+
+  // Update descriptor sets to point to new views
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    std::array<VkDescriptorImageInfo, 4> imageInfos{};
+    imageInfos[0] = {gBuffer.normal[i].sampler, gBuffer.normal[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    imageInfos[1] = {gBuffer.albedo[i].sampler, gBuffer.albedo[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    imageInfos[2] = {gBuffer.material[i].sampler, gBuffer.material[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    imageInfos[3] = {gBuffer.depthBuffer[i].sampler, gBuffer.depthBuffer[i].imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+
+    std::array<VkWriteDescriptorSet, 4> writes{};
+    for (uint32_t j = 0; j < 4; j++) {
+      writes[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[j].dstSet = gBuffer.descriptorSets[i];  // which descriptor set to update
+      writes[j].dstBinding = j;                      // Which binding slot (0-3)
+      writes[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      writes[j].descriptorCount = 1;
+      writes[j].pImageInfo = &imageInfos[j];
+    }
+    vkUpdateDescriptorSets(device, 4, writes.data(), 0, nullptr);
   }
 }
 void VulkanDeferredBase::createSsaoElements() {
@@ -499,6 +534,74 @@ void VulkanDeferredBase::createSsaoElements() {
       write.dstSet = ssaoElements.ssaoBlurDescriptorSets[i];
       write.dstBinding = 0;
       write.dstArrayElement = 0;
+      write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      write.descriptorCount = 1;
+      write.pImageInfo = &imageInfo;
+
+      vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+  }
+}
+
+void VulkanDeferredBase::recreateSSaoElements() {
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    // Raw SSAO output
+    textureManager->InitTexture(ssaoElements.ssaoOutput[i], swapChainExtent.width, swapChainExtent.height, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ssaoElements.ssaoOutput[i].imageView = textureManager->createImageView(ssaoElements.ssaoOutput[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    ssaoElements.ssaoOutput[i].sampler = textureManager->createGBufferSampler();
+
+    // Blurred SSAO output
+    textureManager->InitTexture(ssaoElements.ssaoBlurred[i], swapChainExtent.width, swapChainExtent.height, VK_FORMAT_R8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    ssaoElements.ssaoBlurred[i].imageView = textureManager->createImageView(ssaoElements.ssaoBlurred[i].image, VK_FORMAT_R8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    ssaoElements.ssaoBlurred[i].sampler = textureManager->createGBufferSampler();
+  }
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    {
+      std::array<VkDescriptorImageInfo, 3> imageInfos{};
+
+      // Binding 0: Depth buffer (for position reconstruction)
+      imageInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+      imageInfos[0].imageView = gBuffer.depthBuffer[i].imageView;
+      imageInfos[0].sampler = gBuffer.depthBuffer[i].sampler;
+
+      // Binding 1: Normal buffer
+      imageInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfos[1].imageView = gBuffer.normal[i].imageView;
+      imageInfos[1].sampler = gBuffer.normal[i].sampler;
+
+      // Binding 2: Noise texture (same for all frames)
+      imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfos[2].imageView = ssaoElements.noiseTexture.imageView;
+      imageInfos[2].sampler = ssaoElements.noiseTexture.sampler;
+
+      std::array<VkDescriptorBufferInfo, 2> bufferInfos{};
+
+      std::array<VkWriteDescriptorSet, 3> writes{};
+
+      // Image descriptors
+      for (uint32_t j = 0; j < 3; j++) {
+        writes[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[j].dstSet = ssaoElements.ssaoDescriptorSets[i];
+        writes[j].dstBinding = j;
+        writes[j].dstArrayElement = 0;
+        writes[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[j].descriptorCount = 1;
+        writes[j].pImageInfo = &imageInfos[j];
+      }
+      vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    }
+    {
+      VkDescriptorImageInfo imageInfo{};
+      imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfo.imageView = ssaoElements.ssaoOutput[i].imageView;  // New view!
+      imageInfo.sampler = ssaoElements.ssaoOutput[i].sampler;
+
+      VkWriteDescriptorSet write{};
+      write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write.dstSet = ssaoElements.ssaoBlurDescriptorSets[i];
+      write.dstBinding = 0;
       write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       write.descriptorCount = 1;
       write.pImageInfo = &imageInfo;
@@ -839,6 +942,7 @@ void VulkanDeferredBase::initVulkan() {
   // 7. Create pipelines
   spdlog::info("Creating pipelines...");
   createGeometryPipeline();
+  createssaoPipeline();
   // createLightingPipeline();
 
   // 8. Final setup
@@ -861,20 +965,35 @@ void VulkanDeferredBase::recreateSwapChain() {
 
   // Notify derived class about resize
   onResize(width, height);
-
+  // destroy framebuffers and swapchain image&view
   cleanupSwapChain();
-  cleanupGBuffer();
+  // destroy textures
+  // ssao
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    textureManager->destroyTexture(ssaoElements.ssaoOutput[i]);
+    textureManager->destroyTexture(ssaoElements.ssaoBlurred[i]);
+  }
+  // gbuffer
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    textureManager->destroyTexture(gBuffer.normal[i]);
+    textureManager->destroyTexture(gBuffer.albedo[i]);
+    textureManager->destroyTexture(gBuffer.material[i]);
+    textureManager->destroyTexture(gBuffer.depthBuffer[i]);
+  }
 
   createSwapChain();
-  createImageViews();
+  createImageViews();  // for swapchain
   createDepthResources();
-  createGBuffer();
+  recreateGbuffer();  // recreates textures and updatedescriptor sets
+  recreateSSaoElements();
   createFramebuffers();
 }
 
 void VulkanDeferredBase::cleanupSwapChain() {
-  for (auto framebuffer : gBuffer.geometryFramebuffers) {
-    vkDestroyFramebuffer(device, framebuffer, nullptr);
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    vkDestroyFramebuffer(device, ssaoElements.ssaoFramebuffers[i], nullptr);
+    vkDestroyFramebuffer(device, ssaoElements.ssaoBlurFramebuffers[i], nullptr);
+    vkDestroyFramebuffer(device, gBuffer.geometryFramebuffers[i], nullptr);
   }
 
   for (auto framebuffer : swapChainFramebuffers) {
@@ -896,7 +1015,16 @@ void VulkanDeferredBase::cleanup() {
   // Clean up derived class resources FIRST
   cleanupResources();
 
-  // destroy descriptor sets
+  // Destroy SSAO resources
+  textureManager->destroyTexture(ssaoElements.noiseTexture);
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    textureManager->destroyTexture(ssaoElements.ssaoOutput[i]);
+    textureManager->destroyTexture(ssaoElements.ssaoBlurred[i]);
+    bufferManager->destroyBuffer(ssaoElements.ssaoKernelUBO[i]);
+    bufferManager->destroyBuffer(ssaoElements.ssaoParamsUBO[i]);
+  }
+
+  // Destroy descriptor set layouts (descriptor sets freed with pool)
   vkDestroyDescriptorSetLayout(device, ssaoElements.ssaoDescriptorSetLayout, nullptr);
   vkDestroyDescriptorSetLayout(device, ssaoElements.ssaoBlurDescriptorSetLayout, nullptr);
   vkDestroyDescriptorSetLayout(device, gBuffer.descriptorSetLayout, nullptr);
@@ -906,14 +1034,22 @@ void VulkanDeferredBase::cleanup() {
   bufferManager->destroyBuffer(fullscreenQuad.vertexBuffer);
   bufferManager->destroyBuffer(fullscreenQuad.indexBuffer);
 
-  // Clean up G-Buffer
-  cleanupGBuffer();
-  // Clean up swap chain
-  cleanupSwapChain();
-
   // Clean up render passes
+  vkDestroyRenderPass(device, ssaoElements.ssaoRenderPass, nullptr);
+  vkDestroyRenderPass(device, ssaoElements.ssaoBlurRenderPass, nullptr);
   vkDestroyRenderPass(device, geometryRenderPass, nullptr);
   // vkDestroyRenderPass(device, lightingRenderPass, nullptr);
+
+  // Destroy G-buffer textures
+  for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    textureManager->destroyTexture(gBuffer.normal[i]);
+    textureManager->destroyTexture(gBuffer.albedo[i]);
+    textureManager->destroyTexture(gBuffer.material[i]);
+    textureManager->destroyTexture(gBuffer.depthBuffer[i]);
+  }
+
+  // Clean up swap chain (framebuffers, image views, swapchain)
+  cleanupSwapChain();
 
   // Clean up synchronization objects
   for (u32 i = 0; i < swapChainImages.size(); i++) {

@@ -55,7 +55,6 @@ class TAK_API VulkanDeferredBase {
   virtual void cleanupResources() = 0;
 
   // Data!!
-  // TODO!! make all these buffers size MAX_FRAME_IN_FLIGHT
   std::vector<VkFramebuffer> swapChainFramebuffers;
   // G-Buffer components
   // definition->depth resource create->Gbuffer Texture Create -> geometry render pass->framebuffer->geometrypipline create(derived)
@@ -76,7 +75,7 @@ class TAK_API VulkanDeferredBase {
   } gBuffer;
 
   void createGBuffer();
-  void cleanupGBuffer();
+  void recreateGbuffer();
   // Definition ->  Kernel Generation-> Noise Texture Creation ->createSsaoElements()->Render Passes-> Framebuffers
   //->Pipeline Creation (Derived Class)->Runtime Update->Command Buffer Recording->SSAO Draw Commands (Derived Class)->cleanup
   struct SsaoElements {
@@ -120,6 +119,7 @@ class TAK_API VulkanDeferredBase {
   void generateSSAOKernel();
   void createSSAONoiseTexture();
   void createSsaoElements();
+  void recreateSSaoElements();
 
   // call updateSSAOParamsUBO() from derived::updatescene(deltaTime);
 

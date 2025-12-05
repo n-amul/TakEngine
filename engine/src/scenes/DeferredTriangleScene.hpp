@@ -60,7 +60,7 @@ class DeferredTriangleScene : public VulkanDeferredBase {
     }
   };
 
-  // Test triangle with normals
+  // Test triangle with normals, revise to draw two quads
   const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
                                         {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
                                         {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
@@ -71,15 +71,13 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   // Buffers
   BufferManager::Buffer vertexBuffer;
   BufferManager::Buffer indexBuffer;
-  std::vector<BufferManager::Buffer> uniformBuffers;
-
-  // Uniform data
   struct GeometryUBO {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
     glm::mat4 normalMatrix;
   };
+  std::vector<BufferManager::Buffer> uniformBuffers;
 
   // Pipeline resources
   VkPipelineLayout geometryPipelineLayout;
@@ -115,7 +113,7 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   void createIndexBuffer();
   void createUniformBuffers();
   void createDescriptorSets();
-  void updateUniformBuffer(uint32_t currentImage);
-  void updateSSAOParams(uint32_t currentImage);
+  void updateUniformBuffer();
+  void updateSSAOParams();
   void updateOverlay(float deltaTime);
 };

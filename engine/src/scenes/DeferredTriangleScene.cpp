@@ -243,8 +243,8 @@ void DeferredTriangleScene::createssaoPipeline() {
 
   VK_CHECK_RESULT(vkCreatePipelineLayout(device, &ssaoLayoutInfo, nullptr, &ssaoElements.ssaoPipelineLayout));
 
-  VkPipelineShaderStageCreateInfo ssaoShaders[] = {loadShader(std::string(SHADER_DIR) + "/ssao.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
-                                                   loadShader(std::string(SHADER_DIR) + "/ssao.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+  VkPipelineShaderStageCreateInfo ssaoShaders[] = {loadShader(std::string(SHADER_DIR) + "/deferredShaders/ssao.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+                                                   loadShader(std::string(SHADER_DIR) + "/deferredShaders/ssao.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
   VkGraphicsPipelineCreateInfo ssaoPipelineInfo{};
   ssaoPipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -274,8 +274,8 @@ void DeferredTriangleScene::createssaoPipeline() {
 
   VK_CHECK_RESULT(vkCreatePipelineLayout(device, &blurLayoutInfo, nullptr, &ssaoElements.ssaoBlurPipelineLayout));
 
-  VkPipelineShaderStageCreateInfo blurShaders[] = {loadShader(std::string(SHADER_DIR) + "/ssao_blur.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
-                                                   loadShader(std::string(SHADER_DIR) + "/ssao_blur.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+  VkPipelineShaderStageCreateInfo blurShaders[] = {loadShader(std::string(SHADER_DIR) + "/deferredShaders/ssao_blur.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+                                                   loadShader(std::string(SHADER_DIR) + "/deferredShaders/ssao_blur.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
 
   VkGraphicsPipelineCreateInfo blurPipelineInfo = ssaoPipelineInfo;
   blurPipelineInfo.pStages = blurShaders;
@@ -334,9 +334,9 @@ void DeferredTriangleScene::createIndexBuffer() {
 
 void DeferredTriangleScene::createUniformBuffers() {
   VkDeviceSize bufferSize = sizeof(GeometryUBO);
-  uniformBuffers.resize(swapChainImages.size());
+  uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
-  for (size_t i = 0; i < swapChainImages.size(); i++) {
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     uniformBuffers[i] = bufferManager->createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
   }
 }
@@ -413,7 +413,7 @@ void DeferredTriangleScene::createDescriptorSets() {
   }
 }
 
-void DeferredTriangleScene::updateUniformBuffer(uint32_t currentImage) {
+void DeferredTriangleScene::updateUniformBuffer() {
   GeometryUBO ubo{};
   ubo.model = glm::mat4(1.0f);
   ubo.view = camera.getViewMatrix();
@@ -421,24 +421,25 @@ void DeferredTriangleScene::updateUniformBuffer(uint32_t currentImage) {
   ubo.proj = camera.getProjectionMatrix(aspectRatio);
   ubo.normalMatrix = glm::transpose(glm::inverse(ubo.view * ubo.model));
 
-  bufferManager->updateBuffer(uniformBuffers[currentImage], &ubo, sizeof(ubo), 0);
+  bufferManager->updateBuffer(uniformBuffers[currentFrame], &ubo, sizeof(ubo), 0);
 }
 
-void DeferredTriangleScene::updateSSAOParams(uint32_t currentImage) {
+void DeferredTriangleScene::updateSSAOParams() {
   SsaoElements::SsaoParamsUBO params{};
   float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
   params.projection = camera.getProjectionMatrix(aspectRatio);
+  // TODO:move these fixed values to init part
   params.nearPlane = 0.1f;
   params.farPlane = 100.0f;
   params.noiseScale = glm::vec2(swapChainExtent.width / static_cast<float>(SsaoElements::SSAO_NOISE_DIM), swapChainExtent.height / static_cast<float>(SsaoElements::SSAO_NOISE_DIM));
 
-  bufferManager->updateBuffer(ssaoElements.ssaoParamsUBO[currentImage], &params, sizeof(params), 0);
+  bufferManager->updateBuffer(ssaoElements.ssaoParamsUBO[currentFrame], &params, sizeof(params), 0);
 }
 
 void DeferredTriangleScene::updateScene(float deltaTime) {
   updateOverlay(deltaTime);
-  updateUniformBuffer(currentFrame);  // TODO: use image index instead
-  updateSSAOParams(currentFrame);
+  updateUniformBuffer();
+  updateSSAOParams();
 }
 
 void DeferredTriangleScene::updateOverlay(float deltaTime) {
@@ -589,7 +590,7 @@ void DeferredTriangleScene::recordSSAOBlurCommands(VkCommandBuffer commandBuffer
   vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoBlurPipeline);
 
   // Bind blur descriptor sets (raw SSAO texture)
-  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoElements.ssaoBlurPipelineLayout, 0, 1, &ssaoElements.ssaoBlurDescriptorSets[imageIndex], 0, nullptr);
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ssaoElements.ssaoBlurPipelineLayout, 0, 1, &ssaoElements.ssaoBlurDescriptorSets[currentFrame], 0, nullptr);
 
   // Bind full-screen quad vertex buffer
   VkBuffer vertexBuffers[] = {fullscreenQuad.vertexBuffer.buffer};
