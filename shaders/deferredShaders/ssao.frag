@@ -30,7 +30,7 @@ const float BIAS = 0.025;
 vec3 reconstructViewPos(vec2 uv, float depth) {
     // Convert UV [0,1] to NDC [-1,1]
     vec2 ndc = uv * 2.0 - 1.0;
-    vec4 clipPos = vec4(ndc, depth, 1.0);  // ✅ Use the parameter
+    vec4 clipPos = vec4(ndc, depth, 1.0); 
     vec4 viewPos = inverse(params.projection) * clipPos;
     
     return viewPos.xyz / viewPos.w;
@@ -74,7 +74,7 @@ void main() {
         
         // Get sample depth
         float sampleDepth = texture(depthTexture, offset.xy).r;
-        vec3 sampleViewPos = depthToViewPos(offset.xy, sampleDepth);
+        vec3 sampleViewPos = reconstructViewPos(offset.xy, sampleDepth);
         
         // Range check & accumulate
         float rangeCheck = smoothstep(0.0, 1.0, RADIUS / abs(fragPos.z - sampleViewPos.z));

@@ -121,8 +121,8 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   // ==== GEOMETRY PASS ====
   VkRenderPassBeginInfo geometryPassInfo{};
   geometryPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  geometryPassInfo.renderPass = geometryRenderPass;
-  geometryPassInfo.framebuffer = gBuffer.geometryFramebuffers[currentFrame];
+  geometryPassInfo.renderPass = gBuffer.renderPass;
+  geometryPassInfo.framebuffer = gBuffer.framebuffers[currentFrame];
   geometryPassInfo.renderArea.offset = {0, 0};
   geometryPassInfo.renderArea.extent = swapChainExtent;
 
@@ -714,14 +714,14 @@ void VulkanDeferredBase::createRenderPasses() {
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
 
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &geometryRenderPass) != VK_SUCCESS) {
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &gBuffer.renderPass) != VK_SUCCESS) {
       throw std::runtime_error("failed to create geometry render pass!");
     }
   }
   // ==== SSAO RENDER PASS ====
   {
-    // Single color attachment (R8 is enough for occlusion factor)
-    VkAttachmentDescription attachment{};
+    // Single color attachment
+    VkAttachmentDescription attachment{};  // enough for occlusion
     attachment.format = VK_FORMAT_R8_UNORM;
     attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -771,16 +771,58 @@ void VulkanDeferredBase::createRenderPasses() {
   }
   // ==== LIGHTING RENDER PASS ====
   {
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapChainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorRef = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+
+    std::array<VkSubpassDependency, 2> dependencies{};
+    // Wait for SSAO blur to complete
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;  // prev renderpass
+    dependencies[0].dstSubpass = 0;                    // this subpass
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    // For presentation
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask = 0;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies = dependencies.data();
+
+    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &lightingPass.renderPass));
   }
 }
 
 // Framebuffers: which actual images the render pass will write to.
 void VulkanDeferredBase::createFramebuffers() {
   const uint32_t frameCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-  gBuffer.geometryFramebuffers.resize(frameCount);
-  swapChainFramebuffers.resize(frameCount);
+  gBuffer.framebuffers.resize(frameCount);
   ssaoElements.ssaoFramebuffers.resize(frameCount);
   ssaoElements.ssaoBlurFramebuffers.resize(frameCount);
+  swapChainFramebuffers.resize(swapChainImages.size());
 
   // ==== GEOMETRY FRAMEBUFFERS ====
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -789,14 +831,14 @@ void VulkanDeferredBase::createFramebuffers() {
 
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = geometryRenderPass;
+    framebufferInfo.renderPass = gBuffer.renderPass;
     framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
     framebufferInfo.pAttachments = attachments.data();
     framebufferInfo.width = swapChainExtent.width;
     framebufferInfo.height = swapChainExtent.height;
     framebufferInfo.layers = 1;
 
-    VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &gBuffer.geometryFramebuffers[i]));
+    VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &gBuffer.framebuffers[i]));
   }
   // ==== SSAO FRAMEBUFFERS ====
 
@@ -834,28 +876,21 @@ void VulkanDeferredBase::createFramebuffers() {
     }
   }
 
-  // ==== SWAPCHAIN FRAMEBUFFERS (for lighting pass - skip for now) ====
-  // Uncomment when you implement lighting pass
-  /*
+  // ==== SWAPCHAIN FRAMEBUFFERS (for lighting pass) ====
   for (size_t i = 0; i < swapChainImages.size(); i++) {
-    std::array<VkImageView, 1> attachments = {
-        swapChainImageViews[i]
-    };
+    std::array<VkImageView, 1> attachments = {swapChainImageViews[i]};
 
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = lightingRenderPass;
+    framebufferInfo.renderPass = lightingPass.renderPass;
     framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
     framebufferInfo.pAttachments = attachments.data();
     framebufferInfo.width = swapChainExtent.width;
     framebufferInfo.height = swapChainExtent.height;
     framebufferInfo.layers = 1;
 
-    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create swapchain framebuffer!");
-    }
+    VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]));
   }
-  */
 }
 
 // Initialization
@@ -993,7 +1028,7 @@ void VulkanDeferredBase::cleanupSwapChain() {
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     vkDestroyFramebuffer(device, ssaoElements.ssaoFramebuffers[i], nullptr);
     vkDestroyFramebuffer(device, ssaoElements.ssaoBlurFramebuffers[i], nullptr);
-    vkDestroyFramebuffer(device, gBuffer.geometryFramebuffers[i], nullptr);
+    vkDestroyFramebuffer(device, gBuffer.framebuffers[i], nullptr);
   }
 
   for (auto framebuffer : swapChainFramebuffers) {
@@ -1037,7 +1072,7 @@ void VulkanDeferredBase::cleanup() {
   // Clean up render passes
   vkDestroyRenderPass(device, ssaoElements.ssaoRenderPass, nullptr);
   vkDestroyRenderPass(device, ssaoElements.ssaoBlurRenderPass, nullptr);
-  vkDestroyRenderPass(device, geometryRenderPass, nullptr);
+  vkDestroyRenderPass(device, gBuffer.renderPass, nullptr);
   // vkDestroyRenderPass(device, lightingRenderPass, nullptr);
 
   // Destroy G-buffer textures

@@ -20,7 +20,7 @@ void main() {
     // Normalize view-space normal (NO encoding - SFLOAT stores [-1,1] directly)
     vec3 N = normalize(fragNormalView);
     
-    // Material properties (hardcoded for demo, you can make these uniforms)
+    // Material properties (hardcoded for demo)
     float metallic = 0.0;
     float roughness = 0.5;
     float ao = 1.0;

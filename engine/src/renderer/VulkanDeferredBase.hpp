@@ -42,7 +42,7 @@ class TAK_API VulkanDeferredBase {
   virtual void getDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t& maxSets) = 0;
   virtual void createGeometryPipeline() = 0;  // pass1
   virtual void createssaoPipeline() = 0;      // 2
-  // virtual void createLightingPipeline() = 0;  // 3
+  virtual void createLightingPipeline() = 0;  // 3
   // virtual void createSkyboxPipeline() = 0;
   // virtual void createTransparentPipeline() = 0;
   // virtual void createPostProcessingPipelines() = 0;  // bloomPipeline, toneMappingPipeline,fxaaPipeline
@@ -51,10 +51,9 @@ class TAK_API VulkanDeferredBase {
   virtual void recordGeometryCommands(VkCommandBuffer commandBuffer) = 0;
   virtual void recordSSAOCommands(VkCommandBuffer commandBuffer, u32 imageIndex) = 0;
   virtual void recordSSAOBlurCommands(VkCommandBuffer commandBuffer, u32 imageIndex) = 0;
-  // virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
+  virtual void recordLightingCommands(VkCommandBuffer commandBuffer) = 0;
   virtual void cleanupResources() = 0;
 
-  // Data!!
   std::vector<VkFramebuffer> swapChainFramebuffers;
   // G-Buffer components
   // definition->depth resource create->Gbuffer Texture Create -> geometry render pass->framebuffer->geometrypipline create(derived)
@@ -70,8 +69,10 @@ class TAK_API VulkanDeferredBase {
     std::vector<VkDescriptorSet> descriptorSets;  // used for lighting pass not a descriptor for own
     // derived class: gbufferubo, descriptorset, etc..
 
-    std::vector<VkFramebuffer> geometryFramebuffers;
-    VkPipeline gBufferPipeline;  // MRT output, depth write
+    std::vector<VkFramebuffer> framebuffers;
+    VkPipeline pipeline;  // MRT output, depth write
+
+    VkRenderPass renderPass;
   } gBuffer;
 
   void createGBuffer();
@@ -92,10 +93,6 @@ class TAK_API VulkanDeferredBase {
     std::vector<VkFramebuffer> ssaoFramebuffers;
     std::vector<VkFramebuffer> ssaoBlurFramebuffers;
 
-    // Render passes
-    VkRenderPass ssaoRenderPass;
-    VkRenderPass ssaoBlurRenderPass;
-
     // Uniform buffers
     std::vector<BufferManager::Buffer> ssaoKernelUBO;  // Sample kernel
     struct SsaoParamsUBO {
@@ -115,12 +112,53 @@ class TAK_API VulkanDeferredBase {
     VkDescriptorSetLayout ssaoBlurDescriptorSetLayout;
     std::vector<VkDescriptorSet> ssaoDescriptorSets;
     std::vector<VkDescriptorSet> ssaoBlurDescriptorSets;
+
+    // Render passes
+    VkRenderPass ssaoRenderPass;
+    VkRenderPass ssaoBlurRenderPass;
   } ssaoElements;
   void generateSSAOKernel();
   void createSSAONoiseTexture();
   void createSsaoElements();
   void recreateSSaoElements();
+  // light pass
+  struct LightingPass {
+    static const int MAX_POINT_LIGHTS = 32;
+    VkDescriptorSetLayout descriptorLayout;
+    std::vector<VkDescriptorSet> descriptorSet;
 
+    VkPipelineLayout pipelineLayout;
+    VkPipeline pipeline;
+
+    struct PointLight {
+      glm::vec4 position;  // xyz = position, w = radius
+      glm::vec4 color;     // xyz = color, w = intensity
+    };
+
+    struct DirectionalLight {
+      glm::vec4 direction;  // xyz = direction, w = unused
+      glm::vec4 color;      // xyz = color, w = intensity
+    };
+    struct LightUBO {
+      glm::mat4 invView;    // Inverse view matrix (for world-space reconstruction)
+      glm::mat4 invProj;    // Inverse projection matrix
+      glm::vec4 cameraPos;  // xyz = camera position, w = unused
+      DirectionalLight sunLight;
+      PointLight pointLights[MAX_POINT_LIGHTS];
+      int numPointLights;
+      float ambientIntensity;
+      float ssaoStrength;
+      float padding;
+    };
+    std::vector<BufferManager::Buffer> uboBuffer;
+    VkRenderPass renderPass;
+
+    // Scene lights
+    DirectionalLight sunLight;
+    std::vector<PointLight> pointLights;
+    float ambientIntensity = 0.03f;
+    float ssaoStrength = 1.0f;
+  } lightingPass;
   // call updateSSAOParamsUBO() from derived::updatescene(deltaTime);
 
   // Optional virtual methods
@@ -203,10 +241,6 @@ class TAK_API VulkanDeferredBase {
   VkFormat swapChainImageFormat;
   VkExtent2D swapChainExtent;
   std::vector<VkImageView> swapChainImageViews;
-
-  // Render passes for deferred rendering
-  VkRenderPass geometryRenderPass;
-  VkRenderPass lightingRenderPass;
 
   VkCommandPool commandPool;
   VkCommandPool transientCommandPool;

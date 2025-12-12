@@ -159,12 +159,12 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-"%GLSLC%" ./deferredShaders/ssao_blur.vert -o "ssao_blur.vert.spv"
-if errorlevel 1 (
-    echo ERROR: Failed to compile ssao_blur.vert
-    pause
-    exit /b 1
-)
+@REM "%GLSLC%" ./deferredShaders/ssao_blur.vert -o "ssao_blur.vert.spv"
+@REM if errorlevel 1 (
+@REM     echo ERROR: Failed to compile ssao_blur.vert
+@REM     pause
+@REM     exit /b 1
+@REM )
 "%GLSLC%" ./deferredShaders/ssao_blur.frag -o "ssao_blur.frag.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile ssao_blur.frag

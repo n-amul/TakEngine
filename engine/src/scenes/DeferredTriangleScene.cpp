@@ -25,7 +25,7 @@ void DeferredTriangleScene::loadResources() {
   albedoTexture = textureManager->createTextureFromFile(std::string(TEXTURE_DIR) + "/cuteCat.jpg");
 
   // Initialize UI
-  ui = new UI(textureManager, lightingRenderPass, VK_SAMPLE_COUNT_1_BIT, std::string(SHADER_DIR), window);
+  ui = new UI(textureManager, lightingPass.renderPass, VK_SAMPLE_COUNT_1_BIT, std::string(SHADER_DIR), window);
 
   // Register G-Buffer textures with ImGui (using first frame's textures)
   normalTexId = ui->addTexture(gBuffer.normal[0].sampler, gBuffer.normal[0].imageView);
@@ -38,10 +38,13 @@ void DeferredTriangleScene::loadResources() {
 
 void DeferredTriangleScene::getDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t& maxSets) {
   uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
-
+  // Geometry pass
   poolSizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount});
   poolSizes.push_back({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount});
-  maxSets += frameCount;
+  // Lighting pass: G-Buffer (4 textures) + SSAO blurred (1 texture) + UBO (1)
+  poolSizes.push_back({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 5});  // gbuffer + ssao
+  poolSizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount});
+  maxSets += (frameCount * 2);
 }
 
 void DeferredTriangleScene::createGeometryPipeline() {
@@ -143,10 +146,10 @@ void DeferredTriangleScene::createGeometryPipeline() {
   pipelineInfo.pColorBlendState = &colorBlending;
   pipelineInfo.pDynamicState = &dynamicState;
   pipelineInfo.layout = geometryPipelineLayout;
-  pipelineInfo.renderPass = geometryRenderPass;
+  pipelineInfo.renderPass = gBuffer.renderPass;
   pipelineInfo.subpass = 0;
 
-  VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gBuffer.gBufferPipeline));
+  VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gBuffer.pipeline));
 
   // Cleanup shader modules
   vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
@@ -307,7 +310,7 @@ void DeferredTriangleScene::recordGeometryCommands(VkCommandBuffer commandBuffer
   vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
   // Bind geometry pipeline
-  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gBuffer.gBufferPipeline);
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gBuffer.pipeline);
 
   // Bind vertex and index buffers
   VkBuffer vertexBuffers[] = {vertexBuffer.buffer};
@@ -409,6 +412,98 @@ void DeferredTriangleScene::createDescriptorSets() {
       descriptorWrites[1].pImageInfo = &imageInfo;
 
       vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
+    //=================Lighting=======
+    {
+      // layout
+      std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
+      // 0:normal+metalic from Gbuffer
+      bindings[0].binding = 0;
+      bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[0].descriptorCount = 1;
+      bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+      // 1:Albedo+AO
+      bindings[1].binding = 1;
+      bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[1].descriptorCount = 1;
+      bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+      // 2:Material
+      bindings[2].binding = 2;
+      bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[2].descriptorCount = 1;
+      bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+      // 3:depth
+      bindings[3].binding = 3;
+      bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[3].descriptorCount = 1;
+      bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+      // 4: SSAO Blurred
+      bindings[4].binding = 4;
+      bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[4].descriptorCount = 1;
+      bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+      // 5: Lighting UBO
+      bindings[5].binding = 5;
+      bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      bindings[5].descriptorCount = 1;
+      bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+      VkDescriptorSetLayoutCreateInfo layoutInfo{};
+      layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+      layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+      layoutInfo.pBindings = bindings.data();
+
+      VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &lightingPass.descriptorLayout));
+
+      // Allocate descriptor sets
+      std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, lightingPass.descriptorLayout);
+      VkDescriptorSetAllocateInfo allocInfo{};
+      allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+      allocInfo.descriptorPool = descriptorPool;
+      allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+      allocInfo.pSetLayouts = layouts.data();
+
+      lightingPass.descriptorSet.resize(MAX_FRAMES_IN_FLIGHT);
+      VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, lightingPass.descriptorSet.data()));
+
+      // Update descriptor sets
+      for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        std::array<VkDescriptorImageInfo, 5> imageInfos{};
+
+        // G-Buffer textures
+        imageInfos[0] = {gBuffer.normal[i].sampler, gBuffer.normal[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        imageInfos[1] = {gBuffer.albedo[i].sampler, gBuffer.albedo[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        imageInfos[2] = {gBuffer.material[i].sampler, gBuffer.material[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        imageInfos[3] = {gBuffer.depthBuffer[i].sampler, gBuffer.depthBuffer[i].imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+        imageInfos[4] = {ssaoElements.ssaoBlurred[i].sampler, ssaoElements.ssaoBlurred[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = lightingPass.uboBuffer[i].buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(LightingPass::LightUBO);
+
+        std::array<VkWriteDescriptorSet, 6> writes{};
+
+        for (uint32_t j = 0; j < 5; j++) {
+          writes[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+          writes[j].dstSet = lightingPass.descriptorSet[i];
+          writes[j].dstBinding = j;
+          writes[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+          writes[j].descriptorCount = 1;
+          writes[j].pImageInfo = &imageInfos[j];
+        }
+
+        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[5].dstSet = lightingPass.descriptorSet[i];
+        writes[5].dstBinding = 5;
+        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[5].descriptorCount = 1;
+        writes[5].pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+      }
     }
   }
 }
@@ -525,7 +620,7 @@ void DeferredTriangleScene::cleanupResources() {
   }
 
   // Clean up pipelines
-  vkDestroyPipeline(device, gBuffer.gBufferPipeline, nullptr);
+  vkDestroyPipeline(device, gBuffer.pipeline, nullptr);
   vkDestroyPipelineLayout(device, geometryPipelineLayout, nullptr);
   vkDestroyPipeline(device, ssaoPipeline, nullptr);
   vkDestroyPipeline(device, ssaoBlurPipeline, nullptr);
