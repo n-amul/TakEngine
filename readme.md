@@ -4,6 +4,10 @@ A Vulkan-based rendering engine featuring PBR with IBL and Linear Blend Skinning
 
 ![PBR IBL Scene](./screenshots/pbribl.png)
 
+## Demo Video
+
+[![TakEngine Demo](https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg)](https://youtu.be/ij5FTbHKjts)
+
 ## Requirements
 
 ### System Requirements
