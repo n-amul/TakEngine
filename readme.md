@@ -3,7 +3,7 @@
 A Vulkan-based rendering engine featuring PBR with IBL and Linear Blend Skinning support.
 
 ## Demo Video
-
+▶ **Click the image to watch the demo on YouTube**
 [![PBR IBL Scene](./screenshots/pbribl.png)](https://youtu.be/ij5FTbHKjts)
 
 ## Requirements
