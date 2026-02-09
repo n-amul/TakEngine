@@ -21,18 +21,17 @@
 #include "ui.hpp"
 
 class GLFWwindow;
-
-struct SwapChainSupportDetails {
-  VkSurfaceCapabilitiesKHR capabilities;
-  std::vector<VkSurfaceFormatKHR> formats;
-  std::vector<VkPresentModeKHR> presentModes;
-};
-
 /*
   PASS 1: G-BUFFER (Geometry Pass) -> PASS 2: SSAO -> PASS 3: LIGHTING -> PASS 4: SKYBOX ->PASS 5: TRANSPARENT
   -> PASS 6: POST-PROCESSING(bloom,toneMapping (HDR → LDR + gamma))
 */
 class TAK_API VulkanDeferredBase {
+  struct SwapChainSupportDetails {
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> presentModes;
+  };
+
  public:
   virtual ~VulkanDeferredBase() = default;
   void run();
@@ -95,8 +94,11 @@ class TAK_API VulkanDeferredBase {
 
     // Uniform buffers
     std::vector<BufferManager::Buffer> ssaoKernelUBO;  // Sample kernel
+    // FIX: Added invProjection — precomputed on CPU so the shader doesn't call
+    //      inverse(projection) 65 times per pixel (once per fragment + per kernel sample).
     struct SsaoParamsUBO {
       glm::mat4 projection;
+      glm::mat4 invProjection;  // precomputed inverse projection
       float nearPlane;
       float farPlane;
       glm::vec2 noiseScale;  // screenSize / noiseTextureSize
@@ -167,6 +169,11 @@ class TAK_API VulkanDeferredBase {
   virtual void onKeyEvent(int key, int scancode, int action, int mods) {}
   virtual void onMouseMove(double xpos, double ypos) {}
   virtual void onMouseButton(int button, int action, int mods) {};
+
+  // FIX: Called after recreateSwapChain() completes, so derived classes can
+  //      update lighting descriptor sets and ImGui texture handles that
+  //      reference G-Buffer/SSAO textures destroyed during resize.
+  virtual void onSwapChainRecreated() {}
 
   virtual void initWindow();
   virtual void initVulkan();

@@ -135,37 +135,37 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%GLSLC%" ./deferredShaders/deferred_geometry.vert -o "deferred_geometry.vert.spv"
+"%GLSLC%" ./deferredShaders/deferred_geometry.vert -o "deferredShaders/deferred_geometry.vert.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile deferred_geometry.vert
     pause
     exit /b 1
 )
-"%GLSLC%" ./deferredShaders/deferred_geometry.frag -o "deferred_geometry.frag.spv"
+"%GLSLC%" ./deferredShaders/deferred_geometry.frag -o "deferredShaders/deferred_geometry.frag.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile deferred_geometry.frag
     pause
     exit /b 1
 )
-"%GLSLC%" ./deferredShaders/ssao.vert -o "ssao.vert.spv"
+"%GLSLC%" ./deferredShaders/ssao.vert -o "deferredShaders/ssao.vert.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile ssao.vert
     pause
     exit /b 1
 )
-"%GLSLC%" ./deferredShaders/ssao.frag -o "ssao.frag.spv"
+"%GLSLC%" ./deferredShaders/ssao.frag -o "deferredShaders/ssao.frag.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile ssao.frag
     pause
     exit /b 1
 )
-@REM "%GLSLC%" ./deferredShaders/ssao_blur.vert -o "ssao_blur.vert.spv"
-@REM if errorlevel 1 (
-@REM     echo ERROR: Failed to compile ssao_blur.vert
-@REM     pause
-@REM     exit /b 1
-@REM )
-"%GLSLC%" ./deferredShaders/ssao_blur.frag -o "ssao_blur.frag.spv"
+"%GLSLC%" ./deferredShaders/ssao_blur.vert -o "deferredShaders/ssao_blur.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile ssao_blur.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/ssao_blur.frag -o "deferredShaders/ssao_blur.frag.spv"
 if errorlevel 1 (
     echo ERROR: Failed to compile ssao_blur.frag
     pause
@@ -173,6 +173,25 @@ if errorlevel 1 (
 )
 
 
+"%GLSLC%" ./deferredShaders/deferred_lighting.vert -o "deferredShaders/deferred_lighting.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile deferred_lighting.vert
+    pause
+    exit /b 1
+)
+"%GLSLC%" ./deferredShaders/deferred_lighting.frag -o "deferredShaders/deferred_lighting.frag.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile deferred_lighting.frag
+    pause
+    exit /b 1
+)
+
+"%GLSLC%" ./deferredShaders/fullscreen.vert -o "deferredShaders/fullscreen.vert.spv"
+if errorlevel 1 (
+    echo ERROR: Failed to compile fullscreen.vert
+    pause
+    exit /b 1
+)
 echo.
 echo ===================================
 echo All shaders compiled successfully!

@@ -19,10 +19,12 @@ void DeferredTriangleScene::loadResources() {
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
-  createDescriptorSets();
+  createLightingUBOs();
 
-  // Load textures
+  // Load textures BEFORE descriptor sets — descriptors reference albedoTexture.imageView
   albedoTexture = textureManager->createTextureFromFile(std::string(TEXTURE_DIR) + "/cuteCat.jpg");
+
+  createDescriptorSets();
 
   // Initialize UI
   ui = new UI(textureManager, lightingPass.renderPass, VK_SAMPLE_COUNT_1_BIT, std::string(SHADER_DIR), window);
@@ -31,13 +33,17 @@ void DeferredTriangleScene::loadResources() {
   normalTexId = ui->addTexture(gBuffer.normal[0].sampler, gBuffer.normal[0].imageView);
   albedoTexId = ui->addTexture(gBuffer.albedo[0].sampler, gBuffer.albedo[0].imageView);
   materialTexId = ui->addTexture(gBuffer.material[0].sampler, gBuffer.material[0].imageView);
+
+  // Caution!: Cannot register depth buffer with ImGui — ImGui_ImplVulkan_AddTexture hardcodes
+  // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, but depth is in DEPTH_STENCIL_READ_ONLY_OPTIMAL.
   depthTexId = ui->addTexture(gBuffer.depthBuffer[0].sampler, gBuffer.depthBuffer[0].imageView);
   ssaoTexId = ui->addTexture(ssaoElements.ssaoOutput[0].sampler, ssaoElements.ssaoOutput[0].imageView);
   ssaoBlurredTexId = ui->addTexture(ssaoElements.ssaoBlurred[0].sampler, ssaoElements.ssaoBlurred[0].imageView);
 }
 
 void DeferredTriangleScene::getDescriptorPoolSizes(std::vector<VkDescriptorPoolSize>& poolSizes, uint32_t& maxSets) {
-  uint32_t frameCount = static_cast<uint32_t>(swapChainImages.size());
+  // FIX: Use MAX_FRAMES_IN_FLIGHT consistently (was using swapChainImages.size())
+  uint32_t frameCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
   // Geometry pass
   poolSizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount});
   poolSizes.push_back({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount});
@@ -292,6 +298,105 @@ void DeferredTriangleScene::createssaoPipeline() {
 
   spdlog::info("SSAO pipelines created successfully");
 }
+void DeferredTriangleScene::createLightingPipeline() {
+  spdlog::info("Creating lighting pipeline");
+
+  // Pipeline layout — uses the lighting descriptor set layout created in createDescriptorSets
+  VkPipelineLayoutCreateInfo layoutInfo{};
+  layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  layoutInfo.setLayoutCount = 1;
+  layoutInfo.pSetLayouts = &lightingPass.descriptorLayout;
+
+  VK_CHECK_RESULT(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &lightingPass.pipelineLayout));
+
+  // Fullscreen quad vertex input
+  struct QuadVertex {
+    glm::vec2 pos;
+    glm::vec2 uv;
+  };
+
+  VkVertexInputBindingDescription bindingDesc{};
+  bindingDesc.binding = 0;
+  bindingDesc.stride = sizeof(QuadVertex);
+  bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  std::array<VkVertexInputAttributeDescription, 2> attrDesc{};
+  attrDesc[0] = {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(QuadVertex, pos)};
+  attrDesc[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(QuadVertex, uv)};
+
+  VkPipelineVertexInputStateCreateInfo vertexInput{};
+  vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  vertexInput.vertexBindingDescriptionCount = 1;
+  vertexInput.pVertexBindingDescriptions = &bindingDesc;
+  vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+  vertexInput.pVertexAttributeDescriptions = attrDesc.data();
+
+  VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+  inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+  VkPipelineViewportStateCreateInfo viewportState{};
+  viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewportState.viewportCount = 1;
+  viewportState.scissorCount = 1;
+
+  VkPipelineRasterizationStateCreateInfo rasterizer{};
+  rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterizer.cullMode = VK_CULL_MODE_NONE;
+  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizer.lineWidth = 1.0f;
+
+  VkPipelineMultisampleStateCreateInfo multisampling{};
+  multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+  VkPipelineDepthStencilStateCreateInfo depthStencil{};
+  depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depthStencil.depthTestEnable = VK_FALSE;
+  depthStencil.depthWriteEnable = VK_FALSE;
+
+  VkPipelineColorBlendAttachmentState blendAttachment{};
+  blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  blendAttachment.blendEnable = VK_FALSE;
+
+  VkPipelineColorBlendStateCreateInfo colorBlending{};
+  colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  colorBlending.attachmentCount = 1;
+  colorBlending.pAttachments = &blendAttachment;
+
+  std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+  VkPipelineDynamicStateCreateInfo dynamicState{};
+  dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+  dynamicState.pDynamicStates = dynamicStates.data();
+
+  VkPipelineShaderStageCreateInfo shaderStages[] = {loadShader(std::string(SHADER_DIR) + "/deferredShaders/deferred_lighting.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+                                                    loadShader(std::string(SHADER_DIR) + "/deferredShaders/deferred_lighting.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT)};
+
+  VkGraphicsPipelineCreateInfo pipelineInfo{};
+  pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  pipelineInfo.stageCount = 2;
+  pipelineInfo.pStages = shaderStages;
+  pipelineInfo.pVertexInputState = &vertexInput;
+  pipelineInfo.pInputAssemblyState = &inputAssembly;
+  pipelineInfo.pViewportState = &viewportState;
+  pipelineInfo.pRasterizationState = &rasterizer;
+  pipelineInfo.pMultisampleState = &multisampling;
+  pipelineInfo.pDepthStencilState = &depthStencil;
+  pipelineInfo.pColorBlendState = &colorBlending;
+  pipelineInfo.pDynamicState = &dynamicState;
+  pipelineInfo.layout = lightingPass.pipelineLayout;
+  pipelineInfo.renderPass = lightingPass.renderPass;
+  pipelineInfo.subpass = 0;
+
+  VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &lightingPass.pipeline));
+
+  vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+  vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
+  spdlog::info("Lighting pipeline created successfully");
+}
 
 void DeferredTriangleScene::recordGeometryCommands(VkCommandBuffer commandBuffer) {
   // Set viewport and scissor
@@ -323,6 +428,38 @@ void DeferredTriangleScene::recordGeometryCommands(VkCommandBuffer commandBuffer
 
   // Draw
   vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+}
+
+void DeferredTriangleScene::recordLightingCommands(VkCommandBuffer commandBuffer) {
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(swapChainExtent.width);
+  viewport.height = static_cast<float>(swapChainExtent.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+  vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swapChainExtent;
+  vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+  // Bind lighting pipeline
+  vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPass.pipeline);
+
+  // Bind lighting descriptor set (G-Buffer textures + SSAO + UBO)
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPass.pipelineLayout, 0, 1, &lightingPass.descriptorSet[currentFrame], 0, nullptr);
+
+  // Draw fullscreen quad
+  VkBuffer vertexBuffers[] = {fullscreenQuad.vertexBuffer.buffer};
+  VkDeviceSize offsets[] = {0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+  vkCmdBindIndexBuffer(commandBuffer, fullscreenQuad.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+  vkCmdDrawIndexed(commandBuffer, fullscreenQuad.indexCount, 1, 0, 0, 0);
+
+  // Draw UI overlay (renders into same swapchain target)
+  ui->draw(commandBuffer);
 }
 
 void DeferredTriangleScene::createVertexBuffer() {
@@ -371,8 +508,9 @@ void DeferredTriangleScene::createDescriptorSets() {
 
     VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &geometryDescriptorSetLayout));
 
-    // geometry descriptor set
-    std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), geometryDescriptorSetLayout);
+    // FIX: Size layouts vector to MAX_FRAMES_IN_FLIGHT to match descriptorSetCount.
+    // Was sized to swapChainImages.size() which could mismatch.
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, geometryDescriptorSetLayout);
 
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -469,42 +607,47 @@ void DeferredTriangleScene::createDescriptorSets() {
       VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, lightingPass.descriptorSet.data()));
 
       // Update descriptor sets
-      for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        std::array<VkDescriptorImageInfo, 5> imageInfos{};
-
-        // G-Buffer textures
-        imageInfos[0] = {gBuffer.normal[i].sampler, gBuffer.normal[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        imageInfos[1] = {gBuffer.albedo[i].sampler, gBuffer.albedo[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        imageInfos[2] = {gBuffer.material[i].sampler, gBuffer.material[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        imageInfos[3] = {gBuffer.depthBuffer[i].sampler, gBuffer.depthBuffer[i].imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-        imageInfos[4] = {ssaoElements.ssaoBlurred[i].sampler, ssaoElements.ssaoBlurred[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = lightingPass.uboBuffer[i].buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(LightingPass::LightUBO);
-
-        std::array<VkWriteDescriptorSet, 6> writes{};
-
-        for (uint32_t j = 0; j < 5; j++) {
-          writes[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-          writes[j].dstSet = lightingPass.descriptorSet[i];
-          writes[j].dstBinding = j;
-          writes[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-          writes[j].descriptorCount = 1;
-          writes[j].pImageInfo = &imageInfos[j];
-        }
-
-        writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[5].dstSet = lightingPass.descriptorSet[i];
-        writes[5].dstBinding = 5;
-        writes[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writes[5].descriptorCount = 1;
-        writes[5].pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-      }
+      updateLightingDescriptorSets();
     }
+  }
+}
+
+// FIX: Extracted into a reusable method so it can be called after swap chain recreation.
+void DeferredTriangleScene::updateLightingDescriptorSets() {
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    std::array<VkDescriptorImageInfo, 5> imageInfos{};
+
+    // G-Buffer textures
+    imageInfos[0] = {gBuffer.normal[i].sampler, gBuffer.normal[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    imageInfos[1] = {gBuffer.albedo[i].sampler, gBuffer.albedo[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    imageInfos[2] = {gBuffer.material[i].sampler, gBuffer.material[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    imageInfos[3] = {gBuffer.depthBuffer[i].sampler, gBuffer.depthBuffer[i].imageView, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+    imageInfos[4] = {ssaoElements.ssaoBlurred[i].sampler, ssaoElements.ssaoBlurred[i].imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = lightingPass.uboBuffer[i].buffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(LightingPass::LightUBO);
+
+    std::array<VkWriteDescriptorSet, 6> writes{};
+
+    for (uint32_t j = 0; j < 5; j++) {
+      writes[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[j].dstSet = lightingPass.descriptorSet[i];
+      writes[j].dstBinding = j;
+      writes[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      writes[j].descriptorCount = 1;
+      writes[j].pImageInfo = &imageInfos[j];
+    }
+
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = lightingPass.descriptorSet[i];
+    writes[5].dstBinding = 5;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[5].descriptorCount = 1;
+    writes[5].pBufferInfo = &bufferInfo;
+
+    vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
   }
 }
 
@@ -523,7 +666,10 @@ void DeferredTriangleScene::updateSSAOParams() {
   SsaoElements::SsaoParamsUBO params{};
   float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
   params.projection = camera.getProjectionMatrix(aspectRatio);
-  // TODO:move these fixed values to init part
+  // FIX: Precompute inverse projection on CPU instead of per-fragment in shader.
+  // The SSAO shader was calling inverse(params.projection) 65 times per pixel
+  // (once per fragment + once per kernel sample in reconstructViewPos).
+  params.invProjection = glm::inverse(params.projection);
   params.nearPlane = 0.1f;
   params.farPlane = 100.0f;
   params.noiseScale = glm::vec2(swapChainExtent.width / static_cast<float>(SsaoElements::SSAO_NOISE_DIM), swapChainExtent.height / static_cast<float>(SsaoElements::SSAO_NOISE_DIM));
@@ -535,6 +681,41 @@ void DeferredTriangleScene::updateScene(float deltaTime) {
   updateOverlay(deltaTime);
   updateUniformBuffer();
   updateSSAOParams();
+  updateLightingUBO();
+}
+void DeferredTriangleScene::createLightingUBOs() {
+  lightingPass.uboBuffer.resize(MAX_FRAMES_IN_FLIGHT);
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    lightingPass.uboBuffer[i] = bufferManager->createBuffer(sizeof(LightingPass::LightUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
+  }
+  // Set default sun light
+  lightingPass.sunLight.direction = glm::vec4(glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f)), 0.0f);
+  lightingPass.sunLight.color = glm::vec4(1.0f, 0.98f, 0.95f, 3.0f);
+}
+void DeferredTriangleScene::updateLightingUBO() {
+  LightingPass::LightUBO ubo{};
+
+  glm::mat4 view = camera.getViewMatrix();
+  float aspectRatio = swapChainExtent.width / static_cast<float>(swapChainExtent.height);
+  glm::mat4 proj = camera.getProjectionMatrix(aspectRatio);
+
+  ubo.invView = glm::inverse(view);
+  ubo.invProj = glm::inverse(proj);
+  ubo.cameraPos = glm::vec4(glm::vec3(glm::inverse(view)[3]), 1.0f);
+
+  ubo.sunLight = lightingPass.sunLight;
+
+  // Copy point lights
+  ubo.numPointLights = static_cast<int>(std::min(lightingPass.pointLights.size(), static_cast<size_t>(LightingPass::MAX_POINT_LIGHTS)));
+  for (int i = 0; i < ubo.numPointLights; i++) {
+    ubo.pointLights[i] = lightingPass.pointLights[i];
+  }
+
+  ubo.ambientIntensity = lightingPass.ambientIntensity;
+  ubo.ssaoStrength = lightingPass.ssaoStrength;
+
+  bufferManager->updateBuffer(lightingPass.uboBuffer[currentFrame], &ubo, sizeof(ubo), 0);
 }
 
 void DeferredTriangleScene::updateOverlay(float deltaTime) {
@@ -599,6 +780,24 @@ void DeferredTriangleScene::updateOverlay(float deltaTime) {
 
 void DeferredTriangleScene::onResize(int width, int height) { spdlog::info("Deferred scene resized to {}x{}", width, height); }
 
+// FIX: Called by base class after swap chain recreation.
+// Updates lighting descriptor sets (which reference G-Buffer and SSAO textures
+// that were destroyed and recreated) and re-registers ImGui texture handles.
+void DeferredTriangleScene::onSwapChainRecreated() {
+  spdlog::info("Updating lighting descriptors and ImGui textures after resize");
+
+  // Update lighting pass descriptor sets to point to new G-Buffer/SSAO textures
+  updateLightingDescriptorSets();
+
+  // Re-register ImGui textures — old handles pointed to destroyed image views
+  normalTexId = ui->addTexture(gBuffer.normal[0].sampler, gBuffer.normal[0].imageView);
+  albedoTexId = ui->addTexture(gBuffer.albedo[0].sampler, gBuffer.albedo[0].imageView);
+  materialTexId = ui->addTexture(gBuffer.material[0].sampler, gBuffer.material[0].imageView);
+  depthTexId = ui->addTexture(gBuffer.depthBuffer[0].sampler, gBuffer.depthBuffer[0].imageView);
+  ssaoTexId = ui->addTexture(ssaoElements.ssaoOutput[0].sampler, ssaoElements.ssaoOutput[0].imageView);
+  ssaoBlurredTexId = ui->addTexture(ssaoElements.ssaoBlurred[0].sampler, ssaoElements.ssaoBlurred[0].imageView);
+}
+
 void DeferredTriangleScene::cleanupResources() {
   spdlog::info("Cleaning up deferred scene resources");
 
@@ -618,10 +817,17 @@ void DeferredTriangleScene::cleanupResources() {
   for (auto& buffer : uniformBuffers) {
     bufferManager->destroyBuffer(buffer);
   }
-
-  // Clean up pipelines
+  // Lighting cleanup
+  for (auto& buffer : lightingPass.uboBuffer) {
+    bufferManager->destroyBuffer(buffer);
+  }
+  vkDestroyPipeline(device, lightingPass.pipeline, nullptr);
+  vkDestroyPipelineLayout(device, lightingPass.pipelineLayout, nullptr);
+  vkDestroyDescriptorSetLayout(device, lightingPass.descriptorLayout, nullptr);
+  // geometry pipeline
   vkDestroyPipeline(device, gBuffer.pipeline, nullptr);
   vkDestroyPipelineLayout(device, geometryPipelineLayout, nullptr);
+  // ssao
   vkDestroyPipeline(device, ssaoPipeline, nullptr);
   vkDestroyPipeline(device, ssaoBlurPipeline, nullptr);
   vkDestroyPipelineLayout(device, ssaoElements.ssaoPipelineLayout, nullptr);

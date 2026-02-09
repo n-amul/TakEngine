@@ -14,8 +14,10 @@ layout(binding = 3) uniform SSAOKernel {
 } ssaoKernel;
 
 // SSAO parameters
+// FIX: Added invProjection so we don't compute inverse() per-fragment (65x per pixel!)
 layout(binding = 4) uniform SSAOParams {
     mat4 projection;
+    mat4 invProjection;
     float nearPlane;
     float farPlane;
     vec2 noiseScale;
@@ -30,9 +32,10 @@ const float BIAS = 0.025;
 vec3 reconstructViewPos(vec2 uv, float depth) {
     // Convert UV [0,1] to NDC [-1,1]
     vec2 ndc = uv * 2.0 - 1.0;
-    vec4 clipPos = vec4(ndc, depth, 1.0); 
-    vec4 viewPos = inverse(params.projection) * clipPos;
-    
+    vec4 clipPos = vec4(ndc, depth, 1.0);
+    // FIX: Use precomputed inverse projection instead of inverse()
+    vec4 viewPos = params.invProjection * clipPos;
+
     return viewPos.xyz / viewPos.w;
 }
 
@@ -40,47 +43,48 @@ vec3 reconstructViewPos(vec2 uv, float depth) {
 void main() {
     // Get G-Buffer data
     float depth = texture(depthTexture, fragTexCoord).r;
-    
+
     // Early exit for skybox
     if (depth >= 1.0) {
         outSSAO = 1.0;
         return;
     }
-    
+
+    // Normal is stored in view-space in R16G16B16A16_SFLOAT — read directly
     vec3 normal = normalize(texture(normalTexture, fragTexCoord).rgb);
     vec3 fragPos = reconstructViewPos(fragTexCoord, depth);
 
-    
+
     // Get noise vector
     vec3 randomVec = texture(noiseTexture, fragTexCoord * params.noiseScale).xyz;
-    
+
     // Create TBN matrix
     vec3 tangent = normalize(randomVec - normal * dot(randomVec, normal));
     vec3 bitangent = cross(normal, tangent);
     mat3 TBN = mat3(tangent, bitangent, normal);
-    
+
     // Perform SSAO sampling
     float occlusion = 0.0;
     for(int i = 0; i < KERNEL_SIZE; i++) {
         // Get sample position
         vec3 samplePos = TBN * ssaoKernel.samples[i].xyz;
         samplePos = fragPos + samplePos * RADIUS;
-        
+
         // Project sample position
         vec4 offset = vec4(samplePos, 1.0);
         offset = params.projection * offset;
         offset.xy /= offset.w;
         offset.xy = offset.xy * 0.5 + 0.5;
-        
+
         // Get sample depth
         float sampleDepth = texture(depthTexture, offset.xy).r;
         vec3 sampleViewPos = reconstructViewPos(offset.xy, sampleDepth);
-        
+
         // Range check & accumulate
         float rangeCheck = smoothstep(0.0, 1.0, RADIUS / abs(fragPos.z - sampleViewPos.z));
         occlusion += (sampleViewPos.z >= samplePos.z + BIAS ? 1.0 : 0.0) * rangeCheck;
     }
-    
+
     occlusion = 1.0 - (occlusion / float(KERNEL_SIZE));
     outSSAO = occlusion;
 }

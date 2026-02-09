@@ -35,8 +35,8 @@ class QuaternionCamera {
   void setSpeed(float speed) { movementSpeed = speed; }
   void setSensitivity(float sens) { mouseSensitivity = sens; }
   void setFov(float fov) { this->fov = glm::radians(fov); }
-  void setNearPlane(float near) { nearPlane = near; }
-  void setFarPlane(float far) { farPlane = far; }
+  void setNearPlane(float n) { nearPlane = n; }
+  void setFarPlane(float f) { farPlane = f; }
 
   // Getters
   glm::vec3 getPosition() const { return position; }

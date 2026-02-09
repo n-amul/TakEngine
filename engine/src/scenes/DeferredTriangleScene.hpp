@@ -3,7 +3,7 @@
 
 #include "renderer/VulkanDeferredBase.hpp"
 
-class DeferredTriangleScene : public VulkanDeferredBase {
+class TAK_API DeferredTriangleScene : public VulkanDeferredBase {
  public:
   DeferredTriangleScene();
   ~DeferredTriangleScene() = default;
@@ -22,6 +22,11 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   // Optional overrides
   void updateScene(float deltaTime) override;
   void onResize(int width, int height) override;
+
+  // FIX: Called by base class after swap chain recreation to update lighting
+  //      descriptor sets and re-register ImGui texture handles that reference
+  //      G-Buffer/SSAO textures destroyed and recreated during resize.
+  void onSwapChainRecreated() override;
 
  private:
   // Scene geometry
@@ -87,6 +92,16 @@ class DeferredTriangleScene : public VulkanDeferredBase {
   // SSAO pipeline resources
   VkPipeline ssaoPipeline;
   VkPipeline ssaoBlurPipeline;
+
+  // Lighting pass
+  void createLightingPipeline() override;
+  void recordLightingCommands(VkCommandBuffer commandBuffer) override;
+  void createLightingUBOs();
+  void updateLightingUBO();
+
+  // FIX: Extracted so it can be called both during initial setup and after
+  //      swap chain recreation (when G-Buffer/SSAO textures are new).
+  void updateLightingDescriptorSets();
 
   // Textures
   TextureManager::Texture albedoTexture;

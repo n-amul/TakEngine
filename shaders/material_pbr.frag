@@ -1,8 +1,3 @@
-
-// PBR shader based on the Khronos WebGL PBR implementation
-// See https://github.com/KhronosGroup/glTF-WebGL-PBR
-// Supports both metallic roughness and specular glossiness inputs
-
 #version 450
 #extension GL_GOOGLE_include_directive : require
 

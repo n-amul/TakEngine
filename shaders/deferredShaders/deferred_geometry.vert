@@ -19,13 +19,13 @@ layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragPosView; //viewspace position
 
 void main() {
-    vec4 worldPos = ubo.model * vec4(inPosition,1.0);
+    vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
 
     vec4 viewPos = ubo.view * worldPos;
     fragPosView = viewPos.xyz;
 
     fragNormalView = mat3(ubo.normalMatrix) * inNormal;
     fragTexCoord = inTexCoord;
-    
+
     gl_Position = ubo.proj * viewPos;
 }

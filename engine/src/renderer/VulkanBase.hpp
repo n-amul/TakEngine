@@ -216,12 +216,11 @@ class TAK_API VulkanBase {
   // Validation layer setup
   void setupDebugMessenger();
   bool checkValidationLayerSupport();
+  bool captureNextFrame = false;
 
   // Callbacks
-  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                                      VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-                                                      void* pUserData);
+  static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
   static void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height);

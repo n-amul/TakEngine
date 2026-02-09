@@ -11,7 +11,6 @@
 #include <set>
 #include <stdexcept>
 
-#include "VulkanDeferredBase.hpp"
 #include "core/utils.hpp"
 
 // Public Methods
@@ -176,12 +175,31 @@ void VulkanDeferredBase::recordCommandBuffer(VkCommandBuffer commandBuffer, u32 
   vkCmdEndRenderPass(commandBuffer);
 
   // ==== LIGHTING PASS ====
+  VkRenderPassBeginInfo lightingPassInfo{};
+  lightingPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  lightingPassInfo.renderPass = lightingPass.renderPass;
+  lightingPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+  lightingPassInfo.renderArea.offset = {0, 0};
+  lightingPassInfo.renderArea.extent = swapChainExtent;
 
+  VkClearValue lightingClearValue{};
+  lightingClearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  lightingPassInfo.clearValueCount = 1;
+  lightingPassInfo.pClearValues = &lightingClearValue;
+
+  vkCmdBeginRenderPass(commandBuffer, &lightingPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+  recordLightingCommands(commandBuffer);
+  vkCmdEndRenderPass(commandBuffer);
+
+  // FIX: Removed duplicate vkEndCommandBuffer call.
+  // The original had two consecutive vkEndCommandBuffer calls — the second
+  // would fail because the command buffer is no longer in the recording state.
   VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 }
 
 void VulkanDeferredBase::createDescriptorPool() {
   //  Create descriptor pool
+  // FIX: Use MAX_FRAMES_IN_FLIGHT consistently (was mixing with swapChainImages.size())
   const u32 frameCount = static_cast<u32>(MAX_FRAMES_IN_FLIGHT);
   std::vector<VkDescriptorPoolSize> poolSizes = {
       VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 4},  // Gbuffer
@@ -190,9 +208,8 @@ void VulkanDeferredBase::createDescriptorPool() {
       VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frameCount * 2},          // ssao kernel, params
       // SSAO Blur pass: 1 sampler per frame
       VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frameCount * 1},  // ssao blur
-                                                                                        // Add more for lighting pass later...
   };
-  // retrive sizes
+  // retrive sizes from derived class
   uint32_t maxSets = frameCount * 4;
   getDescriptorPoolSizes(poolSizes, maxSets);
 
@@ -575,8 +592,6 @@ void VulkanDeferredBase::recreateSSaoElements() {
       imageInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
       imageInfos[2].imageView = ssaoElements.noiseTexture.imageView;
       imageInfos[2].sampler = ssaoElements.noiseTexture.sampler;
-
-      std::array<VkDescriptorBufferInfo, 2> bufferInfos{};
 
       std::array<VkWriteDescriptorSet, 3> writes{};
 
@@ -978,7 +993,7 @@ void VulkanDeferredBase::initVulkan() {
   spdlog::info("Creating pipelines...");
   createGeometryPipeline();
   createssaoPipeline();
-  // createLightingPipeline();
+  createLightingPipeline();
 
   // 8. Final setup
   spdlog::info("Creating framebuffers, command buffers, sync objects");
@@ -1019,9 +1034,14 @@ void VulkanDeferredBase::recreateSwapChain() {
   createSwapChain();
   createImageViews();  // for swapchain
   createDepthResources();
-  recreateGbuffer();  // recreates textures and updatedescriptor sets
+  recreateGbuffer();  // recreates textures and updates descriptor sets
   recreateSSaoElements();
   createFramebuffers();
+
+  // FIX: Notify derived class to update lighting descriptors and ImGui texture handles.
+  // The lighting pass descriptor sets reference G-Buffer and SSAO textures that were
+  // just recreated — without this call, those descriptors point to destroyed image views.
+  onSwapChainRecreated();
 }
 
 void VulkanDeferredBase::cleanupSwapChain() {
@@ -1073,7 +1093,8 @@ void VulkanDeferredBase::cleanup() {
   vkDestroyRenderPass(device, ssaoElements.ssaoRenderPass, nullptr);
   vkDestroyRenderPass(device, ssaoElements.ssaoBlurRenderPass, nullptr);
   vkDestroyRenderPass(device, gBuffer.renderPass, nullptr);
-  // vkDestroyRenderPass(device, lightingRenderPass, nullptr);
+  // FIX: Was commented out — lightingPass.renderPass was leaked
+  vkDestroyRenderPass(device, lightingPass.renderPass, nullptr);
 
   // Destroy G-buffer textures
   for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -1356,7 +1377,7 @@ void VulkanDeferredBase::createDepthResources() {
   }
 }
 
-SwapChainSupportDetails VulkanDeferredBase::querySwapChainSupport(VkPhysicalDevice device) {
+VulkanDeferredBase::SwapChainSupportDetails VulkanDeferredBase::querySwapChainSupport(VkPhysicalDevice device) {
   SwapChainSupportDetails details;
 
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
